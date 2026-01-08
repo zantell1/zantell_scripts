@@ -463,9 +463,13 @@ Dockable ScriptUI panel for After Effects that:
       'var d = thisComp.layer("' +
       escape_for_expr(base_layer.name) +
       '").text.sourceText.value;\n' +
-      'if (d.justification == ParagraphJustification.LEFT_JUSTIFY) {\n' +
-      '  d.justification = ParagraphJustification.RIGHT_JUSTIFY;\n' +
-      '}\n' +
+      'var left = 0;\n' +
+      'var right = 1;\n' +
+      'try {\n' +
+      '  left = ParagraphJustification.LEFT_JUSTIFY;\n' +
+      '  right = ParagraphJustification.RIGHT_JUSTIFY;\n' +
+      '} catch (e) {}\n' +
+      'if (d.justification == left) { d.justification = right; }\n' +
       'd;';
 
     var ok = set_expression_checked(

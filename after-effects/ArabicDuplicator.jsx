@@ -460,9 +460,13 @@ Dockable ScriptUI panel for After Effects that:
     }
 
     var expr =
-      'thisComp.layer("' +
+      'var d = thisComp.layer("' +
       escape_for_expr(base_layer.name) +
-      '").text.sourceText.value;';
+      '").text.sourceText.value;\n' +
+      'if (d.justification == ParagraphJustification.LEFT_JUSTIFY) {\n' +
+      '  d.justification = ParagraphJustification.RIGHT_JUSTIFY;\n' +
+      '}\n' +
+      'd;';
 
     var ok = set_expression_checked(
       ar_src,

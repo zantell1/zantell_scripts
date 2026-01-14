@@ -305,100 +305,141 @@
     removeKeyframesRecursive(layer);
   }
 
-  // Calculate world position using temporary expression (most accurate method)
-  function getWorldTransform(layer, time) {
-    var result = {
-      position: null,
-      scale: null,
-      rotation: null
-    };
-    
-    if (!layer.parent) {
-      // No parent chain - just return current values
-      try {
-        result.position = layer.transform.position.valueAtTime(time, false);
-        result.scale = layer.transform.scale.valueAtTime(time, false);
-        result.rotation = layer.transform.rotation ? layer.transform.rotation.valueAtTime(time, false) : 0;
-      } catch (_) {}
-      return result;
-    }
-    
-    // Use temporary expressions to compute world values
+  // Get the world position of a layer's anchor point using AE's toWorld expression
+  // This properly accounts for all expressions and parent transforms
+  function getWorldAnchorPoint(layer, time) {
+    // Use a property we can safely add an expression to
+    // We'll use position and temporarily replace its expression
     var posProp = layer.transform.position;
-    var scaleProp = layer.transform.scale;
-    var rotProp = layer.transform.rotation;
-    
-    var origPosExpr = "";
-    var origScaleExpr = "";
-    var origRotExpr = "";
+    var origExpr = "";
     
     try {
-      // Save original expressions
-      origPosExpr = posProp.expression || "";
-      origScaleExpr = scaleProp.expression || "";
-      if (rotProp) origRotExpr = rotProp.expression || "";
-      
-      // Set expressions to compute world values
+      origExpr = posProp.expression || "";
+    } catch (_) {}
+    
+    var worldPos = null;
+    try {
+      // This expression evaluates anchorPoint (including any expression on it)
+      // then converts to world coordinates (accounting for all parents)
       posProp.expression = "toWorld(transform.anchorPoint)";
-      result.position = posProp.valueAtTime(time, false);
-      
-      // For scale: multiply up the parent chain
-      scaleProp.expression = "s = transform.scale; p = thisLayer; while(p.hasParent) { p = p.parent; s = [s[0]*p.transform.scale[0]/100, s[1]*p.transform.scale[1]/100]; } s";
-      result.scale = scaleProp.valueAtTime(time, false);
-      
-      // For rotation: sum up the parent chain
-      if (rotProp) {
-        rotProp.expression = "r = transform.rotation; p = thisLayer; while(p.hasParent) { p = p.parent; r += p.transform.rotation; } r";
-        result.rotation = rotProp.valueAtTime(time, false);
-      }
+      worldPos = posProp.valueAtTime(time, false);
     } catch (e) {
-      // If expressions fail, fall back to local values
+      // Fallback: try to compute manually
       try {
-        result.position = posProp.valueAtTime(time, false);
-        result.scale = scaleProp.valueAtTime(time, false);
-        result.rotation = rotProp ? rotProp.valueAtTime(time, false) : 0;
+        worldPos = posProp.valueAtTime(time, false);
       } catch (_) {}
-    } finally {
-      // Restore original expressions
-      try { posProp.expression = origPosExpr; } catch (_) {}
-      try { scaleProp.expression = origScaleExpr; } catch (_) {}
-      try { if (rotProp) rotProp.expression = origRotExpr; } catch (_) {}
     }
     
-    return result;
+    // Restore original expression
+    try {
+      posProp.expression = origExpr;
+    } catch (_) {}
+    
+    return worldPos;
   }
 
-  // Apply world transform values and clear parent
-  function flattenToWorld(layer, time) {
-    var world = getWorldTransform(layer, time);
+  // Get accumulated scale through parent chain
+  function getWorldScale(layer, time) {
+    var scaleProp = layer.transform.scale;
+    var origExpr = "";
     
-    // Clear parent first
+    try {
+      origExpr = scaleProp.expression || "";
+    } catch (_) {}
+    
+    var worldScale = null;
+    try {
+      scaleProp.expression = "s = transform.scale; p = thisLayer; while(p.hasParent) { p = p.parent; s = [s[0]*p.transform.scale[0]/100, s[1]*p.transform.scale[1]/100]; } s";
+      worldScale = scaleProp.valueAtTime(time, false);
+    } catch (e) {
+      try {
+        worldScale = scaleProp.valueAtTime(time, false);
+      } catch (_) {}
+    }
+    
+    try {
+      scaleProp.expression = origExpr;
+    } catch (_) {}
+    
+    return worldScale;
+  }
+
+  // Get accumulated rotation through parent chain
+  function getWorldRotation(layer, time) {
+    var rotProp = layer.transform.rotation;
+    if (!rotProp) return 0;
+    
+    var origExpr = "";
+    try {
+      origExpr = rotProp.expression || "";
+    } catch (_) {}
+    
+    var worldRot = 0;
+    try {
+      rotProp.expression = "r = transform.rotation; p = thisLayer; while(p.hasParent) { p = p.parent; r += p.transform.rotation; } r";
+      worldRot = rotProp.valueAtTime(time, false);
+    } catch (e) {
+      try {
+        worldRot = rotProp.valueAtTime(time, false);
+      } catch (_) {}
+    }
+    
+    try {
+      rotProp.expression = origExpr;
+    } catch (_) {}
+    
+    return worldRot;
+  }
+
+  // Flatten layer to world coordinates, preserving visual position
+  // Handles expressions on anchor point, position, scale, rotation AND parent chains
+  function flattenToWorld(layer, time) {
+    // Step 1: Capture the ACTUAL evaluated values of anchor point (before we mess with expressions)
+    var actualAnchorPoint = null;
+    try {
+      actualAnchorPoint = layer.transform.anchorPoint.valueAtTime(time, false);
+    } catch (_) {}
+    
+    // Step 2: Get world position, scale, rotation BEFORE clearing parent
+    // These use temporary expressions that properly account for the entire parent chain
+    var worldPos = getWorldAnchorPoint(layer, time);
+    var worldScale = getWorldScale(layer, time);
+    var worldRot = getWorldRotation(layer, time);
+    
+    // Step 3: Clear all expressions on transform properties
+    try { layer.transform.anchorPoint.expression = ""; } catch (_) {}
+    try { layer.transform.position.expression = ""; } catch (_) {}
+    try { layer.transform.scale.expression = ""; } catch (_) {}
+    try { if (layer.transform.rotation) layer.transform.rotation.expression = ""; } catch (_) {}
+    
+    // Step 4: Clear parent
     layer.parent = null;
     
-    // Apply world values
+    // Step 5: Set the baked anchor point value (the actual computed value, not expression)
     try {
-      if (world.position) {
-        var posProp = layer.transform.position;
-        posProp.expression = ""; // Clear any expression
-        posProp.setValue(world.position);
+      if (actualAnchorPoint) {
+        layer.transform.anchorPoint.setValue(actualAnchorPoint);
       }
     } catch (_) {}
     
+    // Step 6: Set world position - this is where the anchor point should appear in world space
     try {
-      if (world.scale) {
-        var scaleProp = layer.transform.scale;
-        scaleProp.expression = "";
-        scaleProp.setValue(world.scale);
+      if (worldPos) {
+        layer.transform.position.setValue(worldPos);
       }
     } catch (_) {}
     
+    // Step 7: Set world scale
     try {
-      if (world.rotation !== null) {
-        var rotProp = layer.transform.rotation;
-        if (rotProp) {
-          rotProp.expression = "";
-          rotProp.setValue(world.rotation);
-        }
+      if (worldScale) {
+        layer.transform.scale.setValue(worldScale);
+      }
+    } catch (_) {}
+    
+    // Step 8: Set world rotation
+    try {
+      if (worldRot !== null && layer.transform.rotation) {
+        layer.transform.rotation.setValue(worldRot);
       }
     } catch (_) {}
   }

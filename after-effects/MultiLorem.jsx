@@ -350,34 +350,51 @@
         return;
       }
 
-      var srcLayer = comp.selectedLayers[0];
-      var sourceTextProp = srcLayer ? srcLayer.property("Source Text") : null;
-      if (!srcLayer || sourceTextProp === null) {
-        statusText.text = "Error: Selected layer is not a text layer";
+      // Collect all selected text layers
+      var srcLayers = [];
+      var srcLayerData = []; // store original text/font per layer
+      for (var s = 0; s < comp.selectedLayers.length; s++) {
+        var sel = comp.selectedLayers[s];
+        var selTextProp = sel ? sel.property("Source Text") : null;
+        if (sel && selTextProp !== null) {
+          var layerInfo = {
+            layer: sel,
+            name: sel.name,
+            sourceText: "",
+            sourceFont: ""
+          };
+          try {
+            var baseDoc = selTextProp.value;
+            if (baseDoc && baseDoc.text !== undefined) {
+              layerInfo.sourceText = baseDoc.text;
+            }
+            if (baseDoc && baseDoc.font !== undefined) {
+              layerInfo.sourceFont = baseDoc.font;
+            }
+          } catch (baseErr) {
+            // ignore
+          }
+          srcLayers.push(sel);
+          srcLayerData.push(layerInfo);
+        }
+      }
+
+      if (srcLayers.length === 0) {
+        statusText.text = "Error: No text layers selected";
         return;
       }
 
-      // Capture original source text and font for fallbacks
-      defaultSourceText = "";
-      defaultSourceFont = "";
-      try {
-        var baseDoc = sourceTextProp.value;
-        if (baseDoc && baseDoc.text !== undefined) {
-          defaultSourceText = baseDoc.text;
-        }
-        if (baseDoc && baseDoc.font !== undefined) {
-          defaultSourceFont = baseDoc.font;
-        }
-      } catch (baseErr) {
-        // ignore; leave fallback empty
-      }
+      // For fallback text, use first layer
+      defaultSourceText = srcLayerData[0].sourceText;
+      defaultSourceFont = srcLayerData[0].sourceFont;
 
-      statusText.text = "Processing...";
+      statusText.text = "Processing " + srcLayers.length + " layer(s)...";
 
       // Get text length selection
       var lengthType = lengthDropdown.selection.index;
       var fps = comp.frameRate;
       var numLanguages = LANGUAGES.length;
+      var numSourceLayers = srcLayers.length;
 
       // Create output composition
       var outComp = app.project.items.addComp(
@@ -405,137 +422,148 @@
         // Get sample text
         var text = getSampleText(langCode, lengthType);
 
-        // Duplicate source layer to output comp; clear parent and expressions to avoid copy errors
-        var temp = null;
-        var lyr = null;
-        try {
-          temp = srcLayer.duplicate();   // duplicate in source comp
-          temp.parent = null;            // clear parenting
-          clearExpressions(temp);        // strip expressions before move
+        // Duplicate ALL source layers for this language
+        for (var layerIdx = 0; layerIdx < srcLayers.length; layerIdx++) {
+          var srcLayer = srcLayers[layerIdx];
+          var srcData = srcLayerData[layerIdx];
 
-          var beforeCount = outComp.numLayers;
-          var moved = temp.copyToComp(outComp); // returns layer or null depending on AE version
-          var afterCount = outComp.numLayers;
+          // Duplicate source layer to output comp; clear parent and expressions to avoid copy errors
+          var temp = null;
+          var lyr = null;
+          try {
+            temp = srcLayer.duplicate();   // duplicate in source comp
+            temp.parent = null;            // clear parenting
+            clearExpressions(temp);        // strip expressions before move
 
-          // Resolve the copied layer reference
-          if (moved) {
-            lyr = moved;
-          } else if (afterCount > beforeCount) {
-            // copyToComp inserts at top (index 1)
-            lyr = outComp.layer(1);
+            var beforeCount = outComp.numLayers;
+            var moved = temp.copyToComp(outComp); // returns layer or null depending on AE version
+            var afterCount = outComp.numLayers;
+
+            // Resolve the copied layer reference
+            if (moved) {
+              lyr = moved;
+            } else if (afterCount > beforeCount) {
+              // copyToComp inserts at top (index 1)
+              lyr = outComp.layer(1);
+            }
+
+            // Clean up temp copy in source comp
+            if (temp && temp.remove) {
+              try { temp.remove(); } catch (_) {}
+            }
+          } catch (dupErr) {
+            if (temp && temp.remove) {
+              try { temp.remove(); } catch (_) {}
+            }
+            missingFonts.push(langCode + " - " + srcData.name + " (duplication failed)");
+            continue;
           }
 
-          // Clean up temp copy in source comp
-          if (temp && temp.remove) {
-            try { temp.remove(); } catch (_) {}
+          if (!lyr) {
+            missingFonts.push(langCode + " - " + srcData.name + " (duplication failed)");
+            continue;
           }
-        } catch (dupErr) {
-          if (temp && temp.remove) {
-            try { temp.remove(); } catch (_) {}
+
+          // Remove keyframes and set opacity to 100
+          try {
+            var opacityProp = lyr.property("Transform").property("Opacity");
+            if (opacityProp) {
+              if (opacityProp.isTimeVarying) {
+                while (opacityProp.numKeys > 0) {
+                  opacityProp.removeKey(1);
+                }
+              }
+              opacityProp.setValue(100);
+            }
+          } catch (opErr) {
+            // ignore opacity cleanup failures
           }
-          missingFonts.push(langCode + " (duplication failed)");
-          continue;
-        }
 
-        if (!lyr) {
-          missingFonts.push(langCode + " (duplication failed)");
-          continue;
-        }
+          // Name layers: langCode + original name for clarity when multiple layers
+          if (numSourceLayers > 1) {
+            lyr.name = langCode + " - " + srcData.name;
+          } else {
+            lyr.name = langCode;
+          }
+          
+          // Set timing: one frame per language (all layers for same language share timing)
+          var frameTime = i / fps;
+          lyr.startTime = frameTime;
+          lyr.outPoint = frameTime + (1 / fps);
+          
+          // Ensure layer is not parented
+          lyr.parent = null;
 
-        // Remove keyframes and set opacity to 100
-        try {
-          var opacityProp = lyr.property("Transform").property("Opacity");
-          if (opacityProp) {
-            if (opacityProp.isTimeVarying) {
-              while (opacityProp.numKeys > 0) {
-                opacityProp.removeKey(1);
+          // Update text properties
+          var textProp = lyr.property("Source Text");
+          if (textProp && textProp.canSetExpression) {
+            // Remove expression if present
+            try {
+              textProp.expression = "";
+            } catch (e) {
+              // Expression might not be removable, continue
+            }
+          }
+
+          var textDoc = textProp.value;
+          if (textDoc) {
+            // Simple approach: set font first, then text, then direction
+            var targetFont = langEntry.font || "";
+            
+            // Set font FIRST (before text) if we have a target font
+            if (targetFont) {
+              try {
+                // For stubborn fonts: set ASCII placeholder, apply font, then set real text
+                textDoc.text = "X";
+                textDoc.font = targetFont;
+                textProp.setValue(textDoc);
+                
+                // Now get fresh doc and set the real text
+                textDoc = textProp.value;
+                textDoc.text = text;
+              } catch (fontErr) {
+                missingFonts.push(langCode + " - " + srcData.name + " (" + targetFont + ")");
+                textDoc.text = text;
+              }
+            } else {
+              // No target font, just set text
+              textDoc.text = text;
+            }
+            
+            // Set direction and justification for Arabic
+            try {
+              if (langCode === "AR") {
+                textDoc.direction = ParagraphDirection.RIGHT_TO_LEFT;
+                textDoc.justification = ParagraphJustification.RIGHT_JUSTIFY;
+              }
+            } catch (dirErr) {
+              // Skip if not supported
+            }
+            
+            // Apply changes
+            textProp.setValue(textDoc);
+            
+            // Verify font was applied (if we had a target)
+            if (targetFont) {
+              var appliedFont = textProp.value.font || "";
+              if (appliedFont !== targetFont) {
+                missingFonts.push(langCode + " - " + srcData.name + " (wanted: " + targetFont + ", got: " + appliedFont + ")");
               }
             }
-            opacityProp.setValue(100);
           }
-        } catch (opErr) {
-          // ignore opacity cleanup failures
-        }
-
-        // Name layers by language code for clarity
-        lyr.name = langCode;
-        
-        // Set timing: one frame per language
-        var frameTime = i / fps; // offset one frame forward to avoid overlap
-        lyr.startTime = frameTime;
-        lyr.outPoint = frameTime + (1 / fps);
-        
-        // Ensure layer is not parented
-        lyr.parent = null;
-
-        // Update text properties
-        var textProp = lyr.property("Source Text");
-        if (textProp && textProp.canSetExpression) {
-          // Remove expression if present
-          try {
-            textProp.expression = "";
-          } catch (e) {
-            // Expression might not be removable, continue
-          }
-        }
-
-        var textDoc = textProp.value;
-        if (textDoc) {
-          // Simple approach: set font first, then text, then direction
-          var targetFont = langEntry.font || "";
-          
-          // Set font FIRST (before text) if we have a target font
-          if (targetFont) {
-            try {
-              // For stubborn fonts: set ASCII placeholder, apply font, then set real text
-              textDoc.text = "X";
-              textDoc.font = targetFont;
-              textProp.setValue(textDoc);
-              
-              // Now get fresh doc and set the real text
-              textDoc = textProp.value;
-              textDoc.text = text;
-            } catch (fontErr) {
-              missingFonts.push(langCode + " (" + targetFont + ")");
-              textDoc.text = text;
-            }
-          } else {
-            // No target font, just set text
-            textDoc.text = text;
-          }
-          
-          // Set direction and justification for Arabic
-          try {
-            if (langCode === "AR") {
-              textDoc.direction = ParagraphDirection.RIGHT_TO_LEFT;
-              textDoc.justification = ParagraphJustification.RIGHT_JUSTIFY;
-            }
-          } catch (dirErr) {
-            // Skip if not supported
-          }
-          
-          // Apply changes
-          textProp.setValue(textDoc);
-          
-          // Verify font was applied (if we had a target)
-          if (targetFont) {
-            var appliedFont = textProp.value.font || "";
-            if (appliedFont !== targetFont) {
-              missingFonts.push(langCode + " (wanted: " + targetFont + ", got: " + appliedFont + ")");
-            }
-          }
-        }
-      }
+        } // end layer loop
+      } // end language loop
 
       app.endUndoGroup();
       
       // Open the new comp
       outComp.openInViewer();
+      var totalLayers = numLanguages * numSourceLayers;
       if (missingFonts.length > 0) {
         statusText.text = "Complete with font issues: " + missingFonts.join(", ");
         alert("Some fonts could not be applied:\n" + missingFonts.join("\n"));
       } else {
-        statusText.text = "Complete: " + numLanguages + " languages processed";
+        statusText.text = "Complete: " + numLanguages + " langs × " + numSourceLayers + " layers = " + totalLayers + " total";
       }
 
     } catch (e) {

@@ -305,6 +305,104 @@
     removeKeyframesRecursive(layer);
   }
 
+  // Calculate world position using temporary expression (most accurate method)
+  function getWorldTransform(layer, time) {
+    var result = {
+      position: null,
+      scale: null,
+      rotation: null
+    };
+    
+    if (!layer.parent) {
+      // No parent chain - just return current values
+      try {
+        result.position = layer.transform.position.valueAtTime(time, false);
+        result.scale = layer.transform.scale.valueAtTime(time, false);
+        result.rotation = layer.transform.rotation ? layer.transform.rotation.valueAtTime(time, false) : 0;
+      } catch (_) {}
+      return result;
+    }
+    
+    // Use temporary expressions to compute world values
+    var posProp = layer.transform.position;
+    var scaleProp = layer.transform.scale;
+    var rotProp = layer.transform.rotation;
+    
+    var origPosExpr = "";
+    var origScaleExpr = "";
+    var origRotExpr = "";
+    
+    try {
+      // Save original expressions
+      origPosExpr = posProp.expression || "";
+      origScaleExpr = scaleProp.expression || "";
+      if (rotProp) origRotExpr = rotProp.expression || "";
+      
+      // Set expressions to compute world values
+      posProp.expression = "toWorld(transform.anchorPoint)";
+      result.position = posProp.valueAtTime(time, false);
+      
+      // For scale: multiply up the parent chain
+      scaleProp.expression = "s = transform.scale; p = thisLayer; while(p.hasParent) { p = p.parent; s = [s[0]*p.transform.scale[0]/100, s[1]*p.transform.scale[1]/100]; } s";
+      result.scale = scaleProp.valueAtTime(time, false);
+      
+      // For rotation: sum up the parent chain
+      if (rotProp) {
+        rotProp.expression = "r = transform.rotation; p = thisLayer; while(p.hasParent) { p = p.parent; r += p.transform.rotation; } r";
+        result.rotation = rotProp.valueAtTime(time, false);
+      }
+    } catch (e) {
+      // If expressions fail, fall back to local values
+      try {
+        result.position = posProp.valueAtTime(time, false);
+        result.scale = scaleProp.valueAtTime(time, false);
+        result.rotation = rotProp ? rotProp.valueAtTime(time, false) : 0;
+      } catch (_) {}
+    } finally {
+      // Restore original expressions
+      try { posProp.expression = origPosExpr; } catch (_) {}
+      try { scaleProp.expression = origScaleExpr; } catch (_) {}
+      try { if (rotProp) rotProp.expression = origRotExpr; } catch (_) {}
+    }
+    
+    return result;
+  }
+
+  // Apply world transform values and clear parent
+  function flattenToWorld(layer, time) {
+    var world = getWorldTransform(layer, time);
+    
+    // Clear parent first
+    layer.parent = null;
+    
+    // Apply world values
+    try {
+      if (world.position) {
+        var posProp = layer.transform.position;
+        posProp.expression = ""; // Clear any expression
+        posProp.setValue(world.position);
+      }
+    } catch (_) {}
+    
+    try {
+      if (world.scale) {
+        var scaleProp = layer.transform.scale;
+        scaleProp.expression = "";
+        scaleProp.setValue(world.scale);
+      }
+    } catch (_) {}
+    
+    try {
+      if (world.rotation !== null) {
+        var rotProp = layer.transform.rotation;
+        if (rotProp) {
+          rotProp.expression = "";
+          rotProp.setValue(world.rotation);
+        }
+      }
+    } catch (_) {}
+  }
+
 
   // Main processing function
   processButton.onClick = function() {
@@ -399,13 +497,13 @@
           // Get lorem text matching the source layer's word count
           var text = getLoremText(langCode, srcData.wordCount);
 
-          // Duplicate source layer to output comp; bake expressions at time 0, then clear them
+          // Duplicate source layer to output comp; flatten world transform, bake expressions
           var temp = null;
           var lyr = null;
           try {
             temp = srcLayer.duplicate();   // duplicate in source comp
-            temp.parent = null;            // clear parenting
-            bakeAndFreezeExpressions(temp, 0);  // bake expressions at frame 0, then clear them
+            flattenToWorld(temp, 0);       // compute world transform, clear parent, apply world values
+            bakeAndFreezeExpressions(temp, 0);  // bake remaining expressions at frame 0, then clear them
 
             var beforeCount = outComp.numLayers;
             var moved = temp.copyToComp(outComp); // returns layer or null depending on AE version

@@ -28,9 +28,13 @@
   panel.spacing = 10;
   panel.margins = [15, 15, 15, 15];
 
-  // Process button
+  // Process button (multi-layer mode)
   var processButton = panel.add("button", undefined, "Create Language Comp");
   processButton.preferredSize.height = 30;
+
+  // Duplicate Comp button (keyframe mode)
+  var dupCompButton = panel.add("button", undefined, "Duplicate Comp for Languages");
+  dupCompButton.preferredSize.height = 30;
 
   // Reload button (developer helper)
   var reloadButton = panel.add("button", undefined, "Reload Script");
@@ -686,6 +690,155 @@
         alert("Some fonts could not be applied:\n" + missingFonts.join("\n"));
       } else {
         statusText.text = "Complete: " + numLanguages + " langs × " + numSourceLayers + " layers = " + totalLayers + " total";
+      }
+
+    } catch (e) {
+      statusText.text = "Error: " + e.toString();
+      alert("Error: " + e.toString() + "\nLine: " + e.line);
+    }
+  };
+
+  // Duplicate Comp button handler - keyframes text/font instead of duplicating layers
+  dupCompButton.onClick = function() {
+    try {
+      // Validate project state
+      if (!app.project) {
+        statusText.text = "Error: No project open";
+        return;
+      }
+
+      var comp = app.project.activeItem;
+      if (!comp || !(comp instanceof CompItem)) {
+        statusText.text = "Error: No active composition";
+        return;
+      }
+
+      if (comp.selectedLayers.length === 0) {
+        statusText.text = "Error: No layer selected";
+        return;
+      }
+
+      // Get the selected text layer
+      var srcLayer = comp.selectedLayers[0];
+      var srcTextProp = srcLayer ? srcLayer.property("Source Text") : null;
+      if (!srcLayer || srcTextProp === null) {
+        statusText.text = "Error: Selected layer is not a text layer";
+        return;
+      }
+
+      // Get source layer index (to find it in the duplicate comp)
+      var srcLayerIndex = srcLayer.index;
+      var srcLayerName = srcLayer.name;
+
+      // Get the source text to count words
+      var sourceWordCount = 1;
+      try {
+        var srcTextDoc = srcTextProp.value;
+        if (srcTextDoc && srcTextDoc.text) {
+          sourceWordCount = countWords(srcTextDoc.text);
+        }
+      } catch (_) {}
+
+      statusText.text = "Duplicating comp...";
+
+      var fps = comp.frameRate;
+      var numLanguages = LANGUAGES.length;
+
+      app.beginUndoGroup("Duplicate Comp for Languages");
+
+      // Step 1: Duplicate the entire comp
+      var newComp = comp.duplicate();
+      newComp.name = comp.name + "_LANG";
+
+      // Step 2: Resize duration to fit all languages (one frame per language)
+      newComp.duration = numLanguages / fps;
+
+      // Step 3: Find the text layer in the new comp (by index)
+      var textLayer = newComp.layer(srcLayerIndex);
+      if (!textLayer) {
+        alert("Could not find text layer in duplicated comp");
+        app.endUndoGroup();
+        return;
+      }
+
+      var textProp = textLayer.property("Source Text");
+      if (!textProp) {
+        alert("Layer is not a text layer in duplicated comp");
+        app.endUndoGroup();
+        return;
+      }
+
+      // Remove any existing expression on Source Text
+      try {
+        textProp.expression = "";
+      } catch (_) {}
+
+      // Step 4: Add hold keyframes for each language
+      var missingFonts = [];
+      
+      for (var i = 0; i < LANGUAGES.length; i++) {
+        var langEntry = LANGUAGES[i];
+        var langCode = langEntry.code;
+        var targetFont = langEntry.font || "";
+        
+        // Get lorem text for this language
+        var loremText = getLoremText(langCode, sourceWordCount);
+        
+        // Calculate time for this keyframe
+        var keyTime = i / fps;
+        
+        // Get current text document as base (preserves styling)
+        var textDoc = textProp.valueAtTime(0, false);
+        
+        // Set text content
+        textDoc.text = loremText;
+        
+        // Set font if specified
+        if (targetFont) {
+          try {
+            textDoc.font = targetFont;
+          } catch (fontErr) {
+            missingFonts.push(langCode + " (" + targetFont + ")");
+          }
+        }
+        
+        // Set direction for Arabic
+        try {
+          if (langCode === "AR") {
+            textDoc.direction = ParagraphDirection.RIGHT_TO_LEFT;
+            textDoc.justification = ParagraphJustification.RIGHT_JUSTIFY;
+          } else {
+            textDoc.direction = ParagraphDirection.LEFT_TO_RIGHT;
+          }
+        } catch (_) {}
+        
+        // Add keyframe at this time
+        textProp.setValueAtTime(keyTime, textDoc);
+      }
+
+      // Make all keyframes HOLD keyframes (no interpolation)
+      for (var k = 1; k <= textProp.numKeys; k++) {
+        textProp.setInterpolationTypeAtKey(k, KeyframeInterpolationType.HOLD);
+      }
+
+      // Step 5: Add comp markers for each language
+      var markerProp = newComp.markerProperty;
+      for (var m = 0; m < LANGUAGES.length; m++) {
+        var markerTime = m / fps;
+        var markerValue = new MarkerValue(LANGUAGES[m].code);
+        markerProp.setValueAtTime(markerTime, markerValue);
+      }
+
+      app.endUndoGroup();
+
+      // Open the new comp
+      newComp.openInViewer();
+
+      if (missingFonts.length > 0) {
+        statusText.text = "Complete with font issues: " + missingFonts.join(", ");
+        alert("Some fonts could not be applied:\n" + missingFonts.join("\n"));
+      } else {
+        statusText.text = "Complete: Comp duplicated with " + numLanguages + " keyframed languages";
       }
 
     } catch (e) {

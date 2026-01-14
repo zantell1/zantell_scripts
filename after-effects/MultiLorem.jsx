@@ -305,11 +305,9 @@
     removeKeyframesRecursive(layer);
   }
 
-  // Get the world position of a layer's anchor point using AE's toWorld expression
-  // This properly accounts for all expressions and parent transforms
-  function getWorldAnchorPoint(layer, time) {
-    // Use a property we can safely add an expression to
-    // We'll use position and temporarily replace its expression
+  // Get the world position of a specific point on the layer using AE's toWorld expression
+  // pointExpr can be "transform.anchorPoint" or "[0,0]" for center, etc.
+  function getWorldPoint(layer, time, pointExpr) {
     var posProp = layer.transform.position;
     var origExpr = "";
     
@@ -319,9 +317,8 @@
     
     var worldPos = null;
     try {
-      // This expression evaluates anchorPoint (including any expression on it)
-      // then converts to world coordinates (accounting for all parents)
-      posProp.expression = "toWorld(transform.anchorPoint)";
+      // Convert the specified point to world coordinates
+      posProp.expression = "toWorld(" + pointExpr + ")";
       worldPos = posProp.valueAtTime(time, false);
     } catch (e) {
       // Fallback: try to compute manually
@@ -393,16 +390,18 @@
 
   // Flatten layer to world coordinates, preserving visual position
   // Handles expressions on anchor point, position, scale, rotation AND parent chains
+  // 
+  // KEY INSIGHT: Since we're changing the text content later, we can't rely on 
+  // anchor point expressions that reference text bounds (like sourceRectAtTime).
+  // Instead, we find where the layer CENTER appears in world space, then reset
+  // anchor to center. This ensures the layer appears in the right place regardless
+  // of text content changes.
   function flattenToWorld(layer, time) {
-    // Step 1: Capture the ACTUAL evaluated values of anchor point (before we mess with expressions)
-    var actualAnchorPoint = null;
-    try {
-      actualAnchorPoint = layer.transform.anchorPoint.valueAtTime(time, false);
-    } catch (_) {}
+    // Step 1: Get where the layer CENTER [0,0] appears in world space
+    // This accounts for anchor point offset, position, and all parent transforms
+    var worldCenter = getWorldPoint(layer, time, "[0,0]");
     
-    // Step 2: Get world position, scale, rotation BEFORE clearing parent
-    // These use temporary expressions that properly account for the entire parent chain
-    var worldPos = getWorldAnchorPoint(layer, time);
+    // Step 2: Get world scale and rotation
     var worldScale = getWorldScale(layer, time);
     var worldRot = getWorldRotation(layer, time);
     
@@ -415,17 +414,16 @@
     // Step 4: Clear parent
     layer.parent = null;
     
-    // Step 5: Set the baked anchor point value (the actual computed value, not expression)
+    // Step 5: Reset anchor point to CENTER [0, 0]
+    // This avoids issues with text-bound anchor expressions when text changes
     try {
-      if (actualAnchorPoint) {
-        layer.transform.anchorPoint.setValue(actualAnchorPoint);
-      }
+      layer.transform.anchorPoint.setValue([0, 0]);
     } catch (_) {}
     
-    // Step 6: Set world position - this is where the anchor point should appear in world space
+    // Step 6: Set world position - where the CENTER should appear
     try {
-      if (worldPos) {
-        layer.transform.position.setValue(worldPos);
+      if (worldCenter) {
+        layer.transform.position.setValue(worldCenter);
       }
     } catch (_) {}
     

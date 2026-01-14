@@ -231,6 +231,42 @@
     return result.join(" ");
   }
 
+  // Get lorem text that preserves line break structure from source text
+  // e.g., "hello world\nfoo" -> "palabra idioma\ntexto"
+  function getLoremTextWithLineBreaks(langCode, sourceText) {
+    if (!sourceText || sourceText.length === 0) {
+      return getLoremText(langCode, 1);
+    }
+    
+    // Split by various line break types (\r\n, \r, \n)
+    var lines = sourceText.split(/\r\n|\r|\n/);
+    var words = loremWords[langCode] || loremWords["EN"];
+    var wordIndex = 0; // track position in word bank across all lines
+    var resultLines = [];
+    
+    for (var lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      var line = lines[lineIdx];
+      var lineWordCount = countWords(line);
+      
+      // Handle empty lines
+      if (line.replace(/^\s+|\s+$/g, "").length === 0) {
+        resultLines.push("");
+        continue;
+      }
+      
+      // Generate words for this line
+      var lineWords = [];
+      for (var w = 0; w < lineWordCount; w++) {
+        lineWords.push(words[wordIndex % words.length]);
+        wordIndex++;
+      }
+      resultLines.push(lineWords.join(" "));
+    }
+    
+    // Join with carriage return (AE's line break)
+    return resultLines.join("\r");
+  }
+
   // Count words in a string (split by whitespace)
   function countWords(text) {
     if (!text || text.length === 0) return 1;
@@ -730,12 +766,12 @@
       var srcLayerIndex = srcLayer.index;
       var srcLayerName = srcLayer.name;
 
-      // Get the source text to count words
-      var sourceWordCount = 1;
+      // Get the source text (full text with line breaks)
+      var sourceText = "";
       try {
         var srcTextDoc = srcTextProp.value;
         if (srcTextDoc && srcTextDoc.text) {
-          sourceWordCount = countWords(srcTextDoc.text);
+          sourceText = srcTextDoc.text;
         }
       } catch (_) {}
 
@@ -781,8 +817,8 @@
         var langCode = langEntry.code;
         var targetFont = langEntry.font || "";
         
-        // Get lorem text for this language
-        var loremText = getLoremText(langCode, sourceWordCount);
+        // Get lorem text for this language (preserving line breaks from source)
+        var loremText = getLoremTextWithLineBreaks(langCode, sourceText);
         
         // Calculate time for this keyframe
         var keyTime = i / fps;

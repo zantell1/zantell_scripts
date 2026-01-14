@@ -541,6 +541,15 @@
           var lyr = null;
           try {
             temp = srcLayer.duplicate();   // duplicate in source comp
+            
+            // IMPORTANT: Rename layer FIRST before baking!
+            // If expressions use thisLayer.name for position lookup, we need the new name
+            if (numSourceLayers > 1) {
+              temp.name = langCode + " - " + srcData.name;
+            } else {
+              temp.name = langCode;
+            }
+            
             flattenToWorld(temp, 0);       // compute world transform, clear parent, apply world values
             bakeAndFreezeExpressions(temp, 0);  // bake remaining expressions at frame 0, then clear them
 
@@ -584,13 +593,6 @@
             // ignore opacity cleanup failures
           }
 
-          // Name layers: langCode + original name for clarity when multiple layers
-          if (numSourceLayers > 1) {
-            lyr.name = langCode + " - " + srcData.name;
-          } else {
-            lyr.name = langCode;
-          }
-          
           // Set timing: one frame per language (all layers for same language share timing)
           var frameTime = i / fps;
           lyr.startTime = frameTime;

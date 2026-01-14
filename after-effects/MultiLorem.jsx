@@ -533,9 +533,6 @@
           var srcLayer = srcLayers[layerIdx];
           var srcData = srcLayerData[layerIdx];
 
-          // Get lorem text matching the source layer's word count
-          var text = getLoremText(langCode, srcData.wordCount);
-
           // Duplicate source layer to output comp; flatten world transform, bake expressions
           var temp = null;
           var lyr = null;
@@ -543,12 +540,30 @@
             temp = srcLayer.duplicate();   // duplicate in source comp
             
             // IMPORTANT: Rename layer FIRST before baking!
-            // If expressions use thisLayer.name for position lookup, we need the new name
+            // If expressions use thisLayer.name for position/text lookup, we need the new name
             if (numSourceLayers > 1) {
               temp.name = langCode + " - " + srcData.name;
             } else {
               temp.name = langCode;
             }
+            
+            // NOW evaluate Source Text expression to get actual word count for this language
+            // (the expression may use thisLayer.name to determine text)
+            var actualWordCount = srcData.wordCount; // fallback
+            try {
+              var tempTextProp = temp.property("Source Text");
+              if (tempTextProp) {
+                var evaluatedText = tempTextProp.valueAtTime(0, false);
+                if (evaluatedText && evaluatedText.text) {
+                  actualWordCount = countWords(evaluatedText.text);
+                }
+              }
+            } catch (textErr) {
+              // Use fallback word count
+            }
+            
+            // Get lorem text matching the EVALUATED word count
+            var text = getLoremText(langCode, actualWordCount);
             
             flattenToWorld(temp, 0);       // compute world transform, clear parent, apply world values
             bakeAndFreezeExpressions(temp, 0);  // bake remaining expressions at frame 0, then clear them

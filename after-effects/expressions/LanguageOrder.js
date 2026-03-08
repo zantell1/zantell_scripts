@@ -4,13 +4,19 @@
 //
 // Place on the Source Text property of layers named "Language - N".
 // Plainly_CourseOrder must contain a comma-separated list, e.g.:
-//   English, Arabic, Hindi, Japanese
+//   English, مرحبا, नमस्ते, こんにちは
+//
+// Each layer independently detects its own locale and pulls the
+// correct font from :: LANGUAGE COMP — no per-word style needed
+// on the CSV layer.
 // ============================================================
 
-var srcLayer = thisComp.layer("Plainly_CourseOrder");
-var srcDoc   = srcLayer.text.sourceText;
-var csvText  = srcDoc.text || String(srcDoc);
-var srcStyle = srcDoc.style;
+// Load locale detection engine
+footage("Duolingo_locale_engine.jsx").sourceData;
+
+// Read CSV from Plainly_CourseOrder
+var srcDoc  = thisComp.layer("Plainly_CourseOrder").text.sourceText;
+var csvText = srcDoc.text || String(srcDoc);
 
 // Parse CSV and resolve this layer's item from its name ("Language - N")
 var langArray  = csvText.split(",");
@@ -21,24 +27,13 @@ var resultText = (arrayIndex >= 0 && arrayIndex < langArray.length)
     ? langArray[arrayIndex].trim()
     : "error";
 
-// Build the style chain incrementally so each optional property is
-// only applied if the source actually has a defined value for it.
-var s = text.sourceText.style;
+// Detect the script/locale of this specific word and look up its font
+var locale     = duo_detect_locale(resultText);
+var langComp   = comp(":: LANGUAGE COMP");
+var targetFont = langComp.layer(locale).text.sourceText.style.font;
 
-s = s.setFont(srcStyle.font);
-s = s.setFontSize(srcStyle.fontSize);
-
-if (srcStyle.applyFill     !== undefined) s = s.setApplyFill(srcStyle.applyFill);
-if (srcStyle.fillColor     !== undefined) s = s.setFillColor(srcStyle.fillColor);
-if (srcStyle.applyStroke   !== undefined) s = s.setApplyStroke(srcStyle.applyStroke);
-if (srcStyle.strokeColor   !== undefined) s = s.setStrokeColor(srcStyle.strokeColor);
-if (srcStyle.strokeWidth   !== undefined) s = s.setStrokeWidth(srcStyle.strokeWidth);
-if (srcStyle.tracking      !== undefined) s = s.setTracking(srcStyle.tracking);
-if (srcStyle.leading       !== undefined) s = s.setLeading(srcStyle.leading);
-if (srcStyle.baselineShift !== undefined) s = s.setBaselineShift(srcStyle.baselineShift);
-if (srcStyle.fauxBold      !== undefined) s = s.setFauxBold(srcStyle.fauxBold);
-if (srcStyle.fauxItalic    !== undefined) s = s.setFauxItalic(srcStyle.fauxItalic);
-if (srcStyle.allCaps       !== undefined) s = s.setAllCaps(srcStyle.allCaps);
-if (srcStyle.smallCaps     !== undefined) s = s.setSmallCaps(srcStyle.smallCaps);
-
-s.setText(resultText);
+// Apply — font is per-word from locale detection, all other styling
+// (size, color, tracking, etc.) comes from this layer's own properties.
+text.sourceText.style
+    .setFont(targetFont)
+    .setText(resultText);

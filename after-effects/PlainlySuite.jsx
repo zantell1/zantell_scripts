@@ -504,6 +504,51 @@ Panels:
     } catch (e) {}
   };
 
+  // Flow-arrange guide layers in a grid starting from the top-left of the comp.
+  // Uses sourceRectAtTime to measure each layer's actual text bounds so the layout
+  // works for any comp size or font size.
+  var pc_arrange_layers = function (comp, layers) {
+    if (!layers || layers.length === 0) { return; }
+
+    var PADDING  = 20;  // distance from comp edge
+    var GAP_X    = 12;  // horizontal gap between items
+    var GAP_Y    = 10;  // vertical gap between rows
+    // Wrap to a new row when the row would exceed this fraction of the comp width
+    var MAX_ROW_W = comp.width * 0.65;
+
+    var curX = PADDING;
+    var curY = PADDING;
+    var rowH = 0;
+
+    for (var i = 0; i < layers.length; i++) {
+      var lyr = layers[i];
+      var rect = null;
+      try { rect = lyr.sourceRectAtTime(0, false); } catch (e) {}
+
+      var w = (rect && rect.width  > 0) ? rect.width  : 120;
+      var h = (rect && rect.height > 0) ? rect.height : 24;
+
+      // Wrap to next row if this item won't fit (never wrap the very first item)
+      if (i > 0 && curX + w > MAX_ROW_W) {
+        curX = PADDING;
+        curY += rowH + GAP_Y;
+        rowH = 0;
+      }
+
+      // sourceRectAtTime gives bounds relative to the anchor point.
+      // rect.left / rect.top are the offsets from anchor to the edges of the text box.
+      // To place the top-left corner of the text box at (curX, curY):
+      //   position = [curX - rect.left, curY - rect.top]
+      var posX = rect ? (curX - rect.left) : curX;
+      var posY = rect ? (curY - rect.top)  : curY;
+
+      try { lyr.transform.position.setValue([posX, posY]); } catch (e) {}
+
+      curX += w + GAP_X;
+      if (h > rowH) { rowH = h; }
+    }
+  };
+
   // ============================================================
   // PARAMETER CREATOR — UI
   // ============================================================
@@ -571,6 +616,7 @@ Panels:
       var reserved = pc_build_reserved(comp);
       var created = 0;
       var errors = [];
+      var createdLayers = [];
 
       app.beginUndoGroup("PlainlySuite: Create Parameter Layers");
       try {
@@ -578,15 +624,16 @@ Panels:
           try {
             var plainlyName = pc_resolve_name(comp, entries[i].name, reserved);
             reserved[plainlyName] = true;
-            // 1. Create the guide layer
-            pc_create_layer(comp, plainlyName);
-            // 2. Write expression on the source property pointing to the guide layer
+            var newLyr = pc_create_layer(comp, plainlyName);
             if (entries[i].prop) { pc_wire_expression(entries[i].prop, plainlyName); }
+            createdLayers.push(newLyr);
             created++;
           } catch (e) {
             errors.push(entries[i].name + ": " + e.message);
           }
         }
+        // Arrange all newly created layers in a top-left grid
+        pc_arrange_layers(comp, createdLayers);
       } catch (e) {
         errors.push("Unexpected error: " + e.message);
       }

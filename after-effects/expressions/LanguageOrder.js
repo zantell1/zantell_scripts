@@ -12,10 +12,11 @@
 
 var srcLayer = thisComp.layer("Plainly_CourseOrder");
 
-// JS engine: text.sourceText is a TextProperty.
-// .value.text gives the plain string; .style gives the style object.
-var csvText  = srcLayer.text.sourceText.value.text;
-var srcStyle = srcLayer.text.sourceText.style;
+// When accessed from another layer's expression, text.sourceText
+// auto-evaluates to a TextDocument — no .value unwrap needed.
+var srcDoc   = srcLayer.text.sourceText;
+var csvText  = srcDoc.text || String(srcDoc);
+var srcStyle = srcDoc.style;
 
 // Parse CSV and resolve this layer's item from its name ("Language - N")
 var langArray  = csvText.split(",");

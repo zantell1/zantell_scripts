@@ -449,95 +449,19 @@ Panels:
     return reserved;
   };
 
-  // Returns true if obj is an AE Layer (layers have a numeric .index; property groups do not)
-  var pc_is_layer = function (obj) {
-    if (!obj) { return false; }
-    try { return typeof obj.index === "number"; } catch (e) { return false; }
-  };
-
-  // Build an AE expression string that reads the value of a selected property.
-  // Handles: Source Text, effect controls (slider/checkbox/color/dropdown), transform props.
-  // Returns null if the path cannot be determined.
-  var pc_expr_for_prop = function (prop) {
-    if (!prop) { return null; }
-
-    // Source Text of a text layer:  prop → ADBE Text Properties → Layer
-    if (prop.matchName === "ADBE Text Document") {
-      try {
-        var lyr = prop.propertyGroup(2);
-        if (pc_is_layer(lyr)) {
-          return 'thisComp.layer("' + escape_for_expr(lyr.name) + '").text.sourceText';
-        }
-      } catch (e) {}
-    }
-
-    // Effect control:  prop → Effect group → ADBE Effect Parade → Layer
-    try {
-      var effectGroup   = prop.propertyGroup(1);
-      var effectsParade = prop.propertyGroup(2);
-      var lyr           = prop.propertyGroup(3);
-      if (effectsParade.matchName === "ADBE Effect Parade" && pc_is_layer(lyr)) {
-        return 'String(thisComp.layer("' + escape_for_expr(lyr.name) +
-               '").effect("' + escape_for_expr(effectGroup.name) +
-               '")("' + escape_for_expr(prop.name) + '"))';
-      }
-    } catch (e) {}
-
-    // Transform property:  prop → ADBE Transform Group → Layer
-    try {
-      var group = prop.propertyGroup(1);
-      var lyr   = prop.propertyGroup(2);
-      if (group.matchName === "ADBE Transform Group" && pc_is_layer(lyr)) {
-        return 'String(thisComp.layer("' + escape_for_expr(lyr.name) +
-               '").transform["' + escape_for_expr(prop.name) + '"])';
-      }
-    } catch (e) {}
-
-    // Direct layer property one level up
-    try {
-      var lyr = prop.propertyGroup(1);
-      if (pc_is_layer(lyr)) {
-        return 'String(thisComp.layer("' + escape_for_expr(lyr.name) +
-               '")["' + escape_for_expr(prop.name) + '"])';
-      }
-    } catch (e) {}
-
-    return null;
-  };
-
-  // Expression that mirrors a text layer's Source Text (preserves font/style)
-  var pc_expr_for_text_layer = function (layer) {
-    return 'thisComp.layer("' + escape_for_expr(layer.name) + '").text.sourceText';
-  };
-
-  // Create a Plainly guide text layer, wiring its Source Text to `expr` if provided.
-  var pc_create_layer = function (comp, plainlyName, expr) {
+  // Create a Plainly guide text layer with static text content.
+  var pc_create_layer = function (comp, plainlyName) {
     var lyr = comp.layers.addText(plainlyName);
     lyr.name = plainlyName;
     lyr.guideLayer = true;
     lyr.startTime = 0;
     lyr.outPoint = comp.duration;
 
-    var sourceProp = lyr.property("Source Text");
-
-    if (expr) {
-      try {
-        sourceProp.expression = expr;
-      } catch (e) {
-        // Expression failed — fall back to static text so the layer isn't empty
-        try {
-          var td = sourceProp.value;
-          td.text = plainlyName;
-          sourceProp.setValue(td);
-        } catch (e2) {}
-      }
-    } else {
-      try {
-        var td = sourceProp.value;
-        td.text = plainlyName;
-        sourceProp.setValue(td);
-      } catch (e) {}
-    }
+    try {
+      var td = lyr.property("Source Text").value;
+      td.text = plainlyName;
+      lyr.property("Source Text").setValue(td);
+    } catch (e) {}
 
     // Red Fill effect for visibility
     try {
@@ -546,6 +470,14 @@ Panels:
     } catch (e) {}
 
     return lyr;
+  };
+
+  // Write an expression on the source property/layer that reads from the guide layer.
+  var pc_wire_expression = function (prop, plainlyName) {
+    var expr = 'thisComp.layer("' + escape_for_expr(plainlyName) + '").text.sourceText';
+    try {
+      prop.expression = expr;
+    } catch (e) {}
   };
 
   // ============================================================
@@ -578,7 +510,7 @@ Panels:
         return;
       }
 
-      // Each entry: { name: string, expr: string|null }
+      // Each entry: { name: string, prop: Property|null, layer: Layer|null }
       var entries = [];
 
       // From selected properties in the timeline
@@ -586,21 +518,19 @@ Panels:
         var props = comp.selectedProperties;
         for (var i = 0; i < props.length; i++) {
           var p = props[i];
-          if (p && p.name) {
-            entries.push({ name: p.name, expr: pc_expr_for_prop(p) });
-          }
+          if (p && p.name) { entries.push({ name: p.name, prop: p, layer: null }); }
         }
       } catch (e) {}
 
-      // From selected text layers
+      // From selected text layers — wire the Source Text property
       try {
         var layers = comp.selectedLayers;
         for (var i = 0; i < layers.length; i++) {
-          if (layers[i] instanceof TextLayer) {
-            entries.push({
-              name: layers[i].name,
-              expr: pc_expr_for_text_layer(layers[i])
-            });
+          var lyr = layers[i];
+          if (lyr instanceof TextLayer) {
+            var srcProp = null;
+            try { srcProp = lyr.property("Source Text"); } catch (e) {}
+            entries.push({ name: lyr.name, prop: srcProp, layer: lyr });
           }
         }
       } catch (e) {}
@@ -620,7 +550,10 @@ Panels:
           try {
             var plainlyName = pc_resolve_name(comp, entries[i].name, reserved);
             reserved[plainlyName] = true;
-            pc_create_layer(comp, plainlyName, entries[i].expr);
+            // 1. Create the guide layer
+            pc_create_layer(comp, plainlyName);
+            // 2. Write expression on the source property pointing to the guide layer
+            if (entries[i].prop) { pc_wire_expression(entries[i].prop, plainlyName); }
             created++;
           } catch (e) {
             errors.push(entries[i].name + ": " + e.message);

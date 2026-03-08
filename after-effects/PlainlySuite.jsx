@@ -489,17 +489,7 @@ Panels:
     for (var i = 0; i < items.length; i++) {
       escaped.push('"' + items[i].replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"');
     }
-    // In the legacy expression engine sourceText evaluates to a plain string.
-    // In the newer JS expression engine it is a TextProperty object; .value gives
-    // a TextDocument and .value.text gives the string. String() coercion handles
-    // anything else that slips through.
-    var expr =
-      'var _raw = thisComp.layer("' + escape_for_expr(plainlyName) + '").text.sourceText;\n' +
-      'var label = (typeof _raw === "string") ? _raw\n' +
-      '          : (_raw && _raw.value !== undefined)\n' +
-      '            ? ((_raw.value && _raw.value.text !== undefined) ? _raw.value.text : String(_raw.value))\n' +
-      '          : String(_raw);\n' +
-      'label = label.toLowerCase();\n' +
+    var expr = _read_label_expr(plainlyName) +
       'var items = [' + escaped.join(", ") + '];\n' +
       'var result = 1;\n' +
       'for (var i = 0; i < items.length; i++) {\n' +
@@ -538,6 +528,28 @@ Panels:
     try {
       prop.expression = expr;
     } catch (e) {}
+  };
+
+  // Robust string extraction shared by both numeric and dropdown expressions.
+  var _read_label_expr = function (plainlyName) {
+    var q = escape_for_expr(plainlyName);
+    return (
+      'var _raw = thisComp.layer("' + q + '").text.sourceText;\n' +
+      'var label = (typeof _raw === "string") ? _raw\n' +
+      '  : (_raw && _raw.value !== undefined)\n' +
+      '    ? ((_raw.value.text !== undefined) ? _raw.value.text : String(_raw.value))\n' +
+      '  : String(_raw);\n' +
+      'label = label.toLowerCase();\n'
+    );
+  };
+
+  // For numeric properties (sliders, index-type params) whose dropdown items could
+  // not be read: reads the guide layer text as an integer, falling back to 1.
+  var pc_wire_index_expression = function (prop, plainlyName) {
+    var expr = _read_label_expr(plainlyName) +
+      'var n = parseInt(label, 10);\n' +
+      'isNaN(n) ? 1 : n;';
+    try { prop.expression = expr; } catch (e) {}
   };
 
   // Flow-arrange guide layers in a grid starting from the top-left of the comp.
@@ -625,11 +637,14 @@ Panels:
           var p = props[i];
           if (p && p.name) {
             var dropItems = pc_get_dropdown_items(p);
+            var isNumeric = false;
+            try { isNumeric = (typeof p.value === "number"); } catch (e) {}
             entries.push({
               name: pc_name_from_prop(p),
               prop: p,
               layer: null,
-              dropdownItems: dropItems  // null for non-dropdown props
+              dropdownItems: dropItems,
+              isNumeric: isNumeric
             });
           }
         }
@@ -669,6 +684,10 @@ Panels:
             if (entries[i].prop) {
               if (entries[i].dropdownItems) {
                 pc_wire_dropdown_expression(entries[i].prop, plainlyName, entries[i].dropdownItems);
+              } else if (entries[i].isNumeric) {
+                // Numeric property (slider, index, EG menu) whose items couldn't be read.
+                // Expression reads the guide layer text as an integer; type "1", "2", etc.
+                pc_wire_index_expression(entries[i].prop, plainlyName);
               } else {
                 pc_wire_expression(entries[i].prop, plainlyName);
               }

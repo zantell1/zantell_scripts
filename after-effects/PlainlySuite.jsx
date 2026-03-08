@@ -449,24 +449,100 @@ Panels:
     return reserved;
   };
 
-  var pc_create_layer = function (comp, plainlyName) {
+  // Returns true if obj is an AE Layer (layers have a numeric .index; property groups do not)
+  var pc_is_layer = function (obj) {
+    if (!obj) { return false; }
+    try { return typeof obj.index === "number"; } catch (e) { return false; }
+  };
+
+  // Build an AE expression string that reads the value of a selected property.
+  // Handles: Source Text, effect controls (slider/checkbox/color/dropdown), transform props.
+  // Returns null if the path cannot be determined.
+  var pc_expr_for_prop = function (prop) {
+    if (!prop) { return null; }
+
+    // Source Text of a text layer:  prop → ADBE Text Properties → Layer
+    if (prop.matchName === "ADBE Text Document") {
+      try {
+        var lyr = prop.propertyGroup(2);
+        if (pc_is_layer(lyr)) {
+          return 'thisComp.layer("' + escape_for_expr(lyr.name) + '").text.sourceText';
+        }
+      } catch (e) {}
+    }
+
+    // Effect control:  prop → Effect group → ADBE Effect Parade → Layer
+    try {
+      var effectGroup   = prop.propertyGroup(1);
+      var effectsParade = prop.propertyGroup(2);
+      var lyr           = prop.propertyGroup(3);
+      if (effectsParade.matchName === "ADBE Effect Parade" && pc_is_layer(lyr)) {
+        return 'String(thisComp.layer("' + escape_for_expr(lyr.name) +
+               '").effect("' + escape_for_expr(effectGroup.name) +
+               '")("' + escape_for_expr(prop.name) + '"))';
+      }
+    } catch (e) {}
+
+    // Transform property:  prop → ADBE Transform Group → Layer
+    try {
+      var group = prop.propertyGroup(1);
+      var lyr   = prop.propertyGroup(2);
+      if (group.matchName === "ADBE Transform Group" && pc_is_layer(lyr)) {
+        return 'String(thisComp.layer("' + escape_for_expr(lyr.name) +
+               '").transform["' + escape_for_expr(prop.name) + '"])';
+      }
+    } catch (e) {}
+
+    // Direct layer property one level up
+    try {
+      var lyr = prop.propertyGroup(1);
+      if (pc_is_layer(lyr)) {
+        return 'String(thisComp.layer("' + escape_for_expr(lyr.name) +
+               '")["' + escape_for_expr(prop.name) + '"])';
+      }
+    } catch (e) {}
+
+    return null;
+  };
+
+  // Expression that mirrors a text layer's Source Text (preserves font/style)
+  var pc_expr_for_text_layer = function (layer) {
+    return 'thisComp.layer("' + escape_for_expr(layer.name) + '").text.sourceText';
+  };
+
+  // Create a Plainly guide text layer, wiring its Source Text to `expr` if provided.
+  var pc_create_layer = function (comp, plainlyName, expr) {
     var lyr = comp.layers.addText(plainlyName);
     lyr.name = plainlyName;
     lyr.guideLayer = true;
     lyr.startTime = 0;
     lyr.outPoint = comp.duration;
 
-    // Explicitly set source text (belt-and-suspenders for all AE versions)
-    try {
-      var textDoc = lyr.property("Source Text").value;
-      textDoc.text = plainlyName;
-      lyr.property("Source Text").setValue(textDoc);
-    } catch (e) {}
+    var sourceProp = lyr.property("Source Text");
 
-    // Add Fill effect — red by default for visibility
+    if (expr) {
+      try {
+        sourceProp.expression = expr;
+      } catch (e) {
+        // Expression failed — fall back to static text so the layer isn't empty
+        try {
+          var td = sourceProp.value;
+          td.text = plainlyName;
+          sourceProp.setValue(td);
+        } catch (e2) {}
+      }
+    } else {
+      try {
+        var td = sourceProp.value;
+        td.text = plainlyName;
+        sourceProp.setValue(td);
+      } catch (e) {}
+    }
+
+    // Red Fill effect for visibility
     try {
       var fill = lyr.property("ADBE Effect Parade").addProperty("ADBE Fill");
-      fill.property("ADBE Fill-0002").setValue([1, 0, 0]); // red
+      fill.property("ADBE Fill-0002").setValue([1, 0, 0]);
     } catch (e) {}
 
     return lyr;
@@ -502,46 +578,52 @@ Panels:
         return;
       }
 
-      // Collect base names from selected properties and selected text layers
-      var names = [];
+      // Each entry: { name: string, expr: string|null }
+      var entries = [];
 
+      // From selected properties in the timeline
       try {
         var props = comp.selectedProperties;
         for (var i = 0; i < props.length; i++) {
-          var pname = props[i] && props[i].name;
-          if (pname) { names.push(pname); }
-        }
-      } catch (e) {}
-
-      try {
-        var layers = comp.selectedLayers;
-        for (var i = 0; i < layers.length; i++) {
-          if (layers[i] instanceof TextLayer) {
-            names.push(layers[i].name);
+          var p = props[i];
+          if (p && p.name) {
+            entries.push({ name: p.name, expr: pc_expr_for_prop(p) });
           }
         }
       } catch (e) {}
 
-      if (names.length === 0) {
+      // From selected text layers
+      try {
+        var layers = comp.selectedLayers;
+        for (var i = 0; i < layers.length; i++) {
+          if (layers[i] instanceof TextLayer) {
+            entries.push({
+              name: layers[i].name,
+              expr: pc_expr_for_text_layer(layers[i])
+            });
+          }
+        }
+      } catch (e) {}
+
+      if (entries.length === 0) {
         status.text = "Select properties or text layers first.";
         return;
       }
 
-      // Build reserved name set from existing layers + names created this batch
       var reserved = pc_build_reserved(comp);
       var created = 0;
       var errors = [];
 
       app.beginUndoGroup("PlainlySuite: Create Parameter Layers");
       try {
-        for (var i = 0; i < names.length; i++) {
+        for (var i = 0; i < entries.length; i++) {
           try {
-            var plainlyName = pc_resolve_name(comp, names[i], reserved);
-            reserved[plainlyName] = true; // claim it for dedup within this batch
-            pc_create_layer(comp, plainlyName);
+            var plainlyName = pc_resolve_name(comp, entries[i].name, reserved);
+            reserved[plainlyName] = true;
+            pc_create_layer(comp, plainlyName, entries[i].expr);
             created++;
           } catch (e) {
-            errors.push(names[i] + ": " + e.message);
+            errors.push(entries[i].name + ": " + e.message);
           }
         }
       } catch (e) {

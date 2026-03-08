@@ -489,11 +489,16 @@ Panels:
     for (var i = 0; i < items.length; i++) {
       escaped.push('"' + items[i].replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"');
     }
-    // Use valueAtTime to force evaluation of the TextProperty into a TextDocument,
-    // then extract .text to get a plain string. Falls back gracefully for legacy engine.
+    // In the legacy expression engine sourceText evaluates to a plain string.
+    // In the newer JS expression engine it is a TextProperty object; .value gives
+    // a TextDocument and .value.text gives the string. String() coercion handles
+    // anything else that slips through.
     var expr =
-      'var _td = thisComp.layer("' + escape_for_expr(plainlyName) + '").text.sourceText.valueAtTime(time, false);\n' +
-      'var label = (_td && _td.text !== undefined) ? _td.text : String(_td);\n' +
+      'var _raw = thisComp.layer("' + escape_for_expr(plainlyName) + '").text.sourceText;\n' +
+      'var label = (typeof _raw === "string") ? _raw\n' +
+      '          : (_raw && _raw.value !== undefined)\n' +
+      '            ? ((_raw.value && _raw.value.text !== undefined) ? _raw.value.text : String(_raw.value))\n' +
+      '          : String(_raw);\n' +
       'label = label.toLowerCase();\n' +
       'var items = [' + escaped.join(", ") + '];\n' +
       'var result = 1;\n' +

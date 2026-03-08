@@ -1,38 +1,23 @@
 // ============================================================
 // LanguageOrder
-// Place this expression on the Source Text property of any
-// layer named "Language - N" (e.g. "Language - 1", "Language - 2").
+// Requires: JavaScript expression engine (File > Project Settings)
 //
-// Plainly_CourseOrder layer must contain a comma-separated list
-// of language names, e.g.:  English, Arabic, Hindi, Japanese
+// Place on the Source Text property of layers named "Language - N".
+// Plainly_CourseOrder must contain a comma-separated list, e.g.:
+//   English, Arabic, Hindi, Japanese
 //
-// The expression picks the Nth item and inherits ALL text
-// styling (font, size, color, tracking, etc.) from that layer.
+// Picks the Nth item and inherits ALL text styling from
+// Plainly_CourseOrder via the Style API.
 // ============================================================
 
-var _src = thisComp.layer("Plainly_CourseOrder").text.sourceText;
+var srcLayer = thisComp.layer("Plainly_CourseOrder");
 
-// ---- Extract TextDocument + CSV string (cross-engine safe) ----
-// Legacy engine: _src is a string or TextDocument.
-// JS engine:     _src is a TextProperty; .value gives the TextDocument.
-var csvText = "";
-var srcDoc  = null;
+// JS engine: text.sourceText is a TextProperty.
+// .value.text gives the plain string; .style gives the style object.
+var csvText  = srcLayer.text.sourceText.value.text;
+var srcStyle = srcLayer.text.sourceText.style;
 
-if (typeof _src === "string") {
-    csvText = _src;
-} else if (_src && _src.text !== undefined) {
-    // Legacy engine — _src IS the TextDocument.
-    srcDoc  = _src;
-    csvText = _src.text;
-} else if (_src && _src.value !== undefined) {
-    // JS engine — unwrap TextProperty → TextDocument.
-    srcDoc  = _src.value;
-    csvText = (srcDoc && srcDoc.text !== undefined) ? srcDoc.text : String(srcDoc);
-} else {
-    csvText = String(_src);
-}
-
-// ---- Parse CSV and resolve this layer's item ----
+// Parse CSV and resolve this layer's item from its name ("Language - N")
 var langArray  = csvText.split(",");
 var layerNum   = parseInt(thisLayer.name.split(" - ")[1], 10);
 var arrayIndex = layerNum - 1;
@@ -41,14 +26,21 @@ var resultText = (arrayIndex >= 0 && arrayIndex < langArray.length)
     ? langArray[arrayIndex].trim()
     : "error";
 
-// ---- Return result ----
-// If we have a TextDocument, write the new text into it and return it —
-// AE will use all the styling from Plainly_CourseOrder automatically.
-// Modifying srcDoc is safe: .value returns a copy, not a live reference.
-if (srcDoc !== null) {
-    srcDoc.text = resultText;
-    srcDoc;
-} else {
-    // Fallback: return plain string (layer's own styling is kept by AE).
-    resultText;
-}
+// Apply text + all styling from Plainly_CourseOrder using the Style API.
+// setText() must come last in the chain.
+text.sourceText.style
+    .setFont(srcStyle.font)
+    .setFontSize(srcStyle.fontSize)
+    .setFillColor(srcStyle.fillColor)
+    .setApplyFill(srcStyle.applyFill)
+    .setApplyStroke(srcStyle.applyStroke)
+    .setStrokeColor(srcStyle.strokeColor)
+    .setStrokeWidth(srcStyle.strokeWidth)
+    .setTracking(srcStyle.tracking)
+    .setLeading(srcStyle.leading)
+    .setBaselineShift(srcStyle.baselineShift)
+    .setFauxBold(srcStyle.fauxBold)
+    .setFauxItalic(srcStyle.fauxItalic)
+    .setAllCaps(srcStyle.allCaps)
+    .setSmallCaps(srcStyle.smallCaps)
+    .setText(resultText);

@@ -449,6 +449,30 @@ Panels:
     return reserved;
   };
 
+  // If a property has an active expression, evaluate its current value and return it
+  // as a string to use as the Plainly name basis. Falls back to prop.name if the
+  // evaluated value is empty, non-string, or throws.
+  var pc_name_from_prop = function (prop) {
+    try {
+      if (prop.expressionEnabled && prop.expression && prop.expression !== "") {
+        var val = prop.value;
+        var str = "";
+        if (val !== null && val !== undefined) {
+          // TextDocument (Source Text, Essential Properties text param)
+          if (typeof val === "object" && val.text !== undefined) {
+            str = val.text;
+          } else if (typeof val === "string") {
+            str = val;
+          } else if (typeof val === "number") {
+            str = String(val);
+          }
+        }
+        if (str && str !== "") { return str; }
+      }
+    } catch (e) {}
+    return prop.name;
+  };
+
   // Create a Plainly guide text layer with static text content.
   var pc_create_layer = function (comp, plainlyName) {
     var lyr = comp.layers.addText(plainlyName);
@@ -518,7 +542,9 @@ Panels:
         var props = comp.selectedProperties;
         for (var i = 0; i < props.length; i++) {
           var p = props[i];
-          if (p && p.name) { entries.push({ name: p.name, prop: p, layer: null }); }
+          if (p && p.name) {
+            entries.push({ name: pc_name_from_prop(p), prop: p, layer: null });
+          }
         }
       } catch (e) {}
 
@@ -530,7 +556,9 @@ Panels:
           if (lyr instanceof TextLayer) {
             var srcProp = null;
             try { srcProp = lyr.property("Source Text"); } catch (e) {}
-            entries.push({ name: lyr.name, prop: srcProp, layer: lyr });
+            // Use the evaluated Source Text value as the name if it has an expression
+            var name = srcProp ? pc_name_from_prop(srcProp) : lyr.name;
+            entries.push({ name: name, prop: srcProp, layer: lyr });
           }
         }
       } catch (e) {}

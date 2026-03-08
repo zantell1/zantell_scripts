@@ -451,26 +451,53 @@ Panels:
 
   // If a property has an active expression, evaluate its current value and return it
   // as a string to use as the Plainly name basis. Falls back to prop.name if the
-  // evaluated value is empty, non-string, or throws.
+  // evaluated value is empty, numeric (e.g. dropdown index), or throws.
   var pc_name_from_prop = function (prop) {
     try {
       if (prop.expressionEnabled && prop.expression && prop.expression !== "") {
         var val = prop.value;
         var str = "";
         if (val !== null && val !== undefined) {
-          // TextDocument (Source Text, Essential Properties text param)
           if (typeof val === "object" && val.text !== undefined) {
-            str = val.text;
+            str = val.text; // TextDocument
           } else if (typeof val === "string") {
             str = val;
-          } else if (typeof val === "number") {
-            str = String(val);
           }
+          // Intentionally skip numbers — dropdown indices are meaningless as names
         }
         if (str && str !== "") { return str; }
       }
     } catch (e) {}
     return prop.name;
+  };
+
+  // Returns the dropdown items array for a Dropdown Menu Control property, or null.
+  // Uses propertyParameters (AE 2019+).
+  var pc_get_dropdown_items = function (prop) {
+    try {
+      var params = prop.propertyParameters;
+      if (params && params.items && params.items.length > 0) { return params.items; }
+    } catch (e) {}
+    return null;
+  };
+
+  // Writes an expression on a Dropdown Control that matches the Plainly guide layer's
+  // text against the items array (case-insensitive), returning the 1-based index.
+  // Falls back to 1 (first item) if no match.
+  var pc_wire_dropdown_expression = function (prop, plainlyName, items) {
+    var escaped = [];
+    for (var i = 0; i < items.length; i++) {
+      escaped.push('"' + items[i].replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"');
+    }
+    var expr =
+      'var label = thisComp.layer("' + escape_for_expr(plainlyName) + '").text.sourceText.toString().toLowerCase();\n' +
+      'var items = [' + escaped.join(", ") + '];\n' +
+      'var result = 1;\n' +
+      'for (var i = 0; i < items.length; i++) {\n' +
+      '  if (items[i].toLowerCase() === label) { result = i + 1; break; }\n' +
+      '}\n' +
+      'result;';
+    try { prop.expression = expr; } catch (e) {}
   };
 
   // Create a Plainly guide text layer with static text content.
@@ -588,7 +615,13 @@ Panels:
         for (var i = 0; i < props.length; i++) {
           var p = props[i];
           if (p && p.name) {
-            entries.push({ name: pc_name_from_prop(p), prop: p, layer: null });
+            var dropItems = pc_get_dropdown_items(p);
+            entries.push({
+              name: pc_name_from_prop(p),
+              prop: p,
+              layer: null,
+              dropdownItems: dropItems  // null for non-dropdown props
+            });
           }
         }
       } catch (e) {}
@@ -601,9 +634,8 @@ Panels:
           if (lyr instanceof TextLayer) {
             var srcProp = null;
             try { srcProp = lyr.property("Source Text"); } catch (e) {}
-            // Use the evaluated Source Text value as the name if it has an expression
             var name = srcProp ? pc_name_from_prop(srcProp) : lyr.name;
-            entries.push({ name: name, prop: srcProp, layer: lyr });
+            entries.push({ name: name, prop: srcProp, layer: lyr, dropdownItems: null });
           }
         }
       } catch (e) {}
@@ -625,7 +657,13 @@ Panels:
             var plainlyName = pc_resolve_name(comp, entries[i].name, reserved);
             reserved[plainlyName] = true;
             var newLyr = pc_create_layer(comp, plainlyName);
-            if (entries[i].prop) { pc_wire_expression(entries[i].prop, plainlyName); }
+            if (entries[i].prop) {
+              if (entries[i].dropdownItems) {
+                pc_wire_dropdown_expression(entries[i].prop, plainlyName, entries[i].dropdownItems);
+              } else {
+                pc_wire_expression(entries[i].prop, plainlyName);
+              }
+            }
             createdLayers.push(newLyr);
             created++;
           } catch (e) {

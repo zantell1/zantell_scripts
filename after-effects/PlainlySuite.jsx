@@ -5,6 +5,7 @@ Dockable ScriptUI panel suite for After Effects.
 Panels:
 - Arabic Duplicator : duplicate/link layers with Arabic suffix and opacity gating
 - Parameter Creator : create Plainly parameter guide layers from selected properties
+- Font Weight       : batch-change font weight on selected text layers
 - Renderer Check    : find and fix comps not using Classic 3D renderer
 */
 
@@ -715,6 +716,92 @@ Panels:
   };
 
   // ============================================================
+  // FONT WEIGHT — logic + UI
+  // ============================================================
+
+  var FONT_WEIGHTS = [
+    "Thin", "ExtraLight", "Light", "Regular",
+    "Medium", "SemiBold", "Bold", "ExtraBold", "Black"
+  ];
+
+  // Swap the weight suffix of a PostScript font name.
+  // "NotoSansArabic-Bold" + "Regular" → "NotoSansArabic-Regular"
+  // Falls back to original name if it has no hyphen.
+  var _swap_weight = function (fontName, newWeight) {
+    var idx = fontName.lastIndexOf("-");
+    if (idx === -1) { return fontName + "-" + newWeight; }
+    return fontName.substring(0, idx) + "-" + newWeight;
+  };
+
+  // Apply newWeight to every keyframe (or static value) of a Source Text property.
+  var _apply_weight_to_prop = function (prop, newWeight) {
+    if (prop.numKeys === 0) {
+      var doc = prop.value;
+      doc.font = _swap_weight(doc.font, newWeight);
+      prop.setValue(doc);
+    } else {
+      for (var k = 1; k <= prop.numKeys; k++) {
+        try {
+          var doc = prop.keyValue(k);
+          doc.font = _swap_weight(doc.font, newWeight);
+          prop.setValueAtKey(k, doc);
+        } catch(e) {}
+      }
+    }
+  };
+
+  var build_font_weight_ui = function (container) {
+    container.orientation   = "column";
+    container.alignChildren = ["fill", "top"];
+    container.margins       = 8;
+    container.spacing       = 6;
+
+    container.add("statictext", undefined, "Weight to apply:");
+
+    var weightList = container.add("listbox", undefined, FONT_WEIGHTS);
+    weightList.alignment = ["fill", "fill"];
+    // Default selection: Bold
+    for (var i = 0; i < weightList.items.length; i++) {
+      if (weightList.items[i].text === "Bold") { weightList.selection = i; break; }
+    }
+
+    var applyBtn = container.add("button", undefined, "Apply to Selected Layers");
+    var status   = container.add("statictext", undefined, "Select text layers, pick a weight, apply.");
+    status.alignment = ["fill", "bottom"];
+
+    applyBtn.onClick = function () {
+      if (!weightList.selection) { status.text = "Pick a weight first."; return; }
+      var newWeight = weightList.selection.text;
+
+      var comp = null;
+      try { comp = app.project.activeItem; } catch(e) {}
+      if (!(comp instanceof CompItem)) { status.text = "Open a comp first."; return; }
+
+      var updated = 0;
+      var skipped = 0;
+
+      app.beginUndoGroup("PlainlySuite: Change Font Weight");
+      try {
+        var layers = comp.selectedLayers;
+        for (var i = 0; i < layers.length; i++) {
+          var lyr = layers[i];
+          if (!(lyr instanceof TextLayer)) { skipped++; continue; }
+          try {
+            var prop = lyr.property("Source Text");
+            _apply_weight_to_prop(prop, newWeight);
+            updated++;
+          } catch(e) { skipped++; }
+        }
+      } catch(e) {}
+      app.endUndoGroup();
+
+      var msg = "Applied " + newWeight + " to " + updated + " layer" + (updated !== 1 ? "s" : "") + ".";
+      if (skipped > 0) { msg += " " + skipped + " non-text layer(s) skipped."; }
+      status.text = msg;
+    };
+  };
+
+  // ============================================================
   // RENDERER CHECK — logic + UI
   // ============================================================
 
@@ -840,12 +927,14 @@ Panels:
   var tabs = win.add("tabbedpanel");
   tabs.alignment = ["fill", "fill"];
 
-  var arabicTab   = tabs.add("tab", undefined, "Arabic Duplicator");
-  var paramTab    = tabs.add("tab", undefined, "Parameter Creator");
-  var rendererTab = tabs.add("tab", undefined, "Renderer Check");
+  var arabicTab     = tabs.add("tab", undefined, "Arabic Duplicator");
+  var paramTab      = tabs.add("tab", undefined, "Parameter Creator");
+  var fontWeightTab = tabs.add("tab", undefined, "Font Weight");
+  var rendererTab   = tabs.add("tab", undefined, "Renderer Check");
 
   build_arabic_ui(arabicTab);
   build_param_creator_ui(paramTab);
+  build_font_weight_ui(fontWeightTab);
   build_renderer_check_ui(rendererTab);
 
   win.onResizing = win.onResize = function () { this.layout.resize(); };

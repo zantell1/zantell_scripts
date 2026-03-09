@@ -5,6 +5,7 @@ Dockable ScriptUI panel suite for After Effects.
 Panels:
 - Arabic Duplicator : duplicate/link layers with Arabic suffix and opacity gating
 - Parameter Creator : create Plainly parameter guide layers from selected properties
+- Renderer Check    : find and fix comps not using Classic 3D renderer
 */
 
 (function PlainlySuite(thisObj) {
@@ -714,6 +715,116 @@ Panels:
   };
 
   // ============================================================
+  // RENDERER CHECK — logic + UI
+  // ============================================================
+
+  var CLASSIC_3D_RENDERER = "ADBE Ernst";
+
+  var _renderer_label = function (r) {
+    if (r === "ADBE Ernst")       { return "Classic 3D"; }
+    if (r === "ADBE Advanced 3d") { return "Advanced 3D"; }
+    if (r === "ADBE cinema4d")    { return "Cinema 4D"; }
+    return r || "Unknown";
+  };
+
+  var build_renderer_check_ui = function (container) {
+    container.orientation    = "column";
+    container.alignChildren  = ["fill", "top"];
+    container.margins        = 8;
+    container.spacing        = 6;
+
+    var scanBtn = container.add("button", undefined, "Scan Project");
+
+    var list = container.add("listbox", undefined, undefined, {
+      numberOfColumns: 2,
+      columnTitles:    ["Comp", "Renderer"],
+      multiselect:     true
+    });
+    list.alignment = ["fill", "fill"];
+
+    var btnRow = container.add("group");
+    btnRow.orientation   = "row";
+    btnRow.alignChildren = ["fill", "center"];
+    btnRow.spacing       = 6;
+
+    var fixSelBtn = btnRow.add("button", undefined, "Fix Selected");
+    var fixAllBtn = btnRow.add("button", undefined, "Fix All");
+
+    var status = container.add("statictext", undefined, "Click Scan to begin.");
+    status.alignment = ["fill", "bottom"];
+
+    // ---- data store ----
+    var _found = []; // [{ comp, renderer }]
+
+    var _rebuild_list = function () {
+      list.removeAll();
+      for (var i = 0; i < _found.length; i++) {
+        var entry = _found[i];
+        var item  = list.add("item", entry.comp.name);
+        item.subItems[0].text = _renderer_label(entry.renderer);
+      }
+    };
+
+    var _scan = function () {
+      _found = [];
+      if (!app.project) { status.text = "No project open."; return; }
+      try {
+        for (var i = 1; i <= app.project.numItems; i++) {
+          try {
+            var item = app.project.item(i);
+            if (!(item instanceof CompItem)) { continue; }
+            var r = "";
+            try { r = item.renderer; } catch(e) {}
+            if (r !== CLASSIC_3D_RENDERER) {
+              _found.push({ comp: item, renderer: r });
+            }
+          } catch(e) {}
+        }
+      } catch(e) {}
+      _rebuild_list();
+      if (_found.length === 0) {
+        status.text = "All comps use Classic 3D.";
+      } else {
+        status.text = _found.length + " comp" + (_found.length !== 1 ? "s" : "") + " not using Classic 3D.";
+      }
+    };
+
+    var _fix_entries = function (entries) {
+      if (entries.length === 0) { status.text = "Nothing to fix."; return; }
+      var fixed = 0;
+      var errors = [];
+      app.beginUndoGroup("PlainlySuite: Switch to Classic 3D");
+      for (var i = 0; i < entries.length; i++) {
+        try {
+          entries[i].comp.renderer = CLASSIC_3D_RENDERER;
+          fixed++;
+        } catch(e) {
+          errors.push(entries[i].comp.name + ": " + e.message);
+        }
+      }
+      app.endUndoGroup();
+      _scan();
+      if (errors.length > 0) {
+        status.text = "Fixed " + fixed + ". Errors: " + errors.length;
+      } else {
+        status.text = "Fixed " + fixed + " comp" + (fixed !== 1 ? "s" : "") + ".";
+      }
+    };
+
+    scanBtn.onClick = _scan;
+
+    fixSelBtn.onClick = function () {
+      var sel = [];
+      for (var i = 0; i < list.items.length; i++) {
+        if (list.items[i].selected) { sel.push(_found[i]); }
+      }
+      _fix_entries(sel);
+    };
+
+    fixAllBtn.onClick = function () { _fix_entries(_found); };
+  };
+
+  // ============================================================
   // MAIN — build tabbed panel
   // ============================================================
 
@@ -729,11 +840,13 @@ Panels:
   var tabs = win.add("tabbedpanel");
   tabs.alignment = ["fill", "fill"];
 
-  var arabicTab = tabs.add("tab", undefined, "Arabic Duplicator");
-  var paramTab  = tabs.add("tab", undefined, "Parameter Creator");
+  var arabicTab   = tabs.add("tab", undefined, "Arabic Duplicator");
+  var paramTab    = tabs.add("tab", undefined, "Parameter Creator");
+  var rendererTab = tabs.add("tab", undefined, "Renderer Check");
 
   build_arabic_ui(arabicTab);
   build_param_creator_ui(paramTab);
+  build_renderer_check_ui(rendererTab);
 
   win.onResizing = win.onResize = function () { this.layout.resize(); };
 

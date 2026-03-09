@@ -805,13 +805,20 @@ Panels:
   // RENDERER CHECK — logic + UI
   // ============================================================
 
-  var CLASSIC_3D_RENDERER = "ADBE Ernst";
+  // Classic 3D is the default renderer; AE returns "" for it.
+  // Advanced 3D and Cinema 4D use explicit match-name strings.
+  var CLASSIC_3D_RENDERER = "";
 
   var _renderer_label = function (r) {
-    if (r === "ADBE Ernst")       { return "Classic 3D"; }
+    if (r === "" || r === null || r === undefined) { return "Classic 3D"; }
     if (r === "ADBE Advanced 3d") { return "Advanced 3D"; }
     if (r === "ADBE cinema4d")    { return "Cinema 4D"; }
-    return r || "Unknown";
+    if (r === "ADBE Ernst")       { return "Cinema 4D (Ernst)"; }
+    return r;
+  };
+
+  var _is_classic = function (r) {
+    return (r === "" || r === null || r === undefined);
   };
 
   var build_renderer_check_ui = function (container) {
@@ -862,7 +869,7 @@ Panels:
             if (!(item instanceof CompItem)) { continue; }
             var r = "";
             try { r = item.renderer; } catch(e) {}
-            if (r !== CLASSIC_3D_RENDERER) {
+            if (!_is_classic(r)) {
               _found.push({ comp: item, renderer: r });
             }
           } catch(e) {}
@@ -883,7 +890,7 @@ Panels:
       app.beginUndoGroup("PlainlySuite: Switch to Classic 3D");
       for (var i = 0; i < entries.length; i++) {
         try {
-          entries[i].comp.renderer = CLASSIC_3D_RENDERER;
+          entries[i].comp.renderer = "";
           fixed++;
         } catch(e) {
           errors.push(entries[i].comp.name + ": " + e.message);

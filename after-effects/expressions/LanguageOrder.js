@@ -2,23 +2,31 @@
 // LanguageOrder
 // Requires: JavaScript expression engine (File > Project Settings)
 //
-// Place on the Source Text property of layers named "Language - N".
-// Plainly_CourseOrder must contain a comma-separated list, e.g.:
-//   English, مرحبا, नमस्ते, こんにちは
+// Setup:
+//   1. Add Effect > Expression Controls > Dropdown Menu Control
+//      to this layer. Name it "Font Context".
+//      Set items to:  App | Marketing | Feather
 //
-// Each layer independently detects its own locale and pulls the
-// correct font from :: LANGUAGE COMP — no per-word style needed
-// on the CSV layer.
+//   2. In :: LANGUAGE COMP, name layers as:
+//      {LOCALE}-App        e.g. AR-App, JA-App, EN-App
+//      {LOCALE}-Marketing  e.g. AR-Marketing, EN-Marketing
+//      {LOCALE}-Feather    e.g. EN-Feather
+//      (Feather is Latin-only; non-Latin automatically falls back to App)
+//
+//   3. Plainly_CourseOrder layer contains a comma-separated list:
+//      English, مرحبا, नमस्ते, こんにちは
 // ============================================================
 
-// Load locale detection engine
 footage("Duolingo_locale_engine.jsx").sourceData;
 
-// Read CSV from Plainly_CourseOrder
-var srcDoc  = thisComp.layer("Plainly_CourseOrder").text.sourceText;
-var csvText = srcDoc.text || String(srcDoc);
+// ---- Read context from Dropdown Menu Control on this layer ----
+var contextItems = ["App", "Marketing", "Feather"];
+var contextIdx   = effect("Font Context")(1); // 1-based index
+var context      = contextItems[contextIdx - 1] || "App";
 
-// Parse CSV and resolve this layer's item from its name ("Language - N")
+// ---- Read CSV and resolve this layer's text ----
+var srcDoc     = thisComp.layer("Plainly_CourseOrder").text.sourceText;
+var csvText    = srcDoc.text || String(srcDoc);
 var langArray  = csvText.split(",");
 var layerNum   = parseInt(thisLayer.name.split(" - ")[1], 10);
 var arrayIndex = layerNum - 1;
@@ -27,13 +35,23 @@ var resultText = (arrayIndex >= 0 && arrayIndex < langArray.length)
     ? langArray[arrayIndex].trim()
     : "error";
 
-// Detect the script/locale of this specific word and look up its font
-var locale     = duo_detect_locale(resultText);
-var langComp   = comp(":: LANGUAGE COMP");
-var targetFont = langComp.layer(locale).text.sourceText.style.font;
+// ---- Detect locale and look up font ----
+var locale    = duo_detect_locale(resultText);
+var langComp  = comp(":: LANGUAGE COMP");
 
-// Apply — font is per-word from locale detection, all other styling
-// (size, color, tracking, etc.) comes from this layer's own properties.
+// Try the requested context first; if the layer doesn't exist
+// (e.g. Feather has no Arabic variant), fall back to App.
+var targetLayer = null;
+try { targetLayer = langComp.layer(locale + "-" + context); } catch(e) {}
+if (!targetLayer) {
+    try { targetLayer = langComp.layer(locale + "-App"); } catch(e) {}
+}
+
+var targetFont = targetLayer
+    ? targetLayer.text.sourceText.style.font
+    : srcDoc.style.font; // last resort: whatever the CSV layer uses
+
+// ---- Apply ----
 text.sourceText.style
     .setFont(targetFont)
     .setText(resultText);

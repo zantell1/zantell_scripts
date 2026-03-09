@@ -7,24 +7,26 @@
 //      to this layer. Name it "Font Context".
 //      Set items to:  App | Marketing | Feather
 //
-//   2. In :: LANGUAGE COMP, name layers as:
-//      {LOCALE}-App        e.g. AR-App, JA-App, EN-App
-//      {LOCALE}-Marketing  e.g. AR-Marketing, EN-Marketing
-//      {LOCALE}-Feather    e.g. EN-Feather
-//      (Feather is Latin-only; non-Latin automatically falls back to App)
+//   2. In :: LANGUAGE COMP, name layers as {LOCALE}-{Context}:
+//      AR-App, AR-Marketing, EN-App, EN-Feather, JA-App, etc.
+//      The font set on each layer only needs to use any weight —
+//      this expression will swap in the weight from the current layer.
 //
-//   3. Plainly_CourseOrder layer contains a comma-separated list:
+//   3. Plainly_CourseOrder contains a comma-separated list:
 //      English, مرحبا, नमस्ते, こんにちは
+//
+// Font weight is inherited from whatever this text layer is set to.
+// Font family comes from :: LANGUAGE COMP based on locale + context.
 // ============================================================
 
 footage("Duolingo_locale_engine.jsx").sourceData;
 
-// ---- Read context from Dropdown Menu Control on this layer ----
+// ---- Context dropdown ----
 var contextItems = ["App", "Marketing", "Feather"];
-var contextIdx   = effect("Font Context")(1); // 1-based index
+var contextIdx   = effect("Font Context")(1);
 var context      = contextItems[contextIdx - 1] || "App";
 
-// ---- Read CSV and resolve this layer's text ----
+// ---- CSV → resolved text ----
 var srcDoc     = thisComp.layer("Plainly_CourseOrder").text.sourceText;
 var csvText    = srcDoc.text || String(srcDoc);
 var langArray  = csvText.split(",");
@@ -35,23 +37,34 @@ var resultText = (arrayIndex >= 0 && arrayIndex < langArray.length)
     ? langArray[arrayIndex].trim()
     : "error";
 
-// ---- Detect locale and look up font ----
-var locale    = duo_detect_locale(resultText);
-var langComp  = comp(":: LANGUAGE COMP");
+// ---- Locale detection → font family from :: LANGUAGE COMP ----
+var locale   = duo_detect_locale(resultText);
+var langComp = comp(":: LANGUAGE COMP");
 
-// Try the requested context first; if the layer doesn't exist
-// (e.g. Feather has no Arabic variant), fall back to App.
 var targetLayer = null;
 try { targetLayer = langComp.layer(locale + "-" + context); } catch(e) {}
 if (!targetLayer) {
     try { targetLayer = langComp.layer(locale + "-App"); } catch(e) {}
 }
 
-var targetFont = targetLayer
+// Extract font FAMILY from the language comp layer (everything before the last hyphen).
+// e.g. "NotoSansArabic-Bold" → "NotoSansArabic"
+var compFont    = targetLayer
     ? targetLayer.text.sourceText.style.font
-    : srcDoc.style.font; // last resort: whatever the CSV layer uses
+    : srcDoc.style.font;
+var compParts   = compFont.split("-");
+var fontFamily  = compParts.slice(0, compParts.length - 1).join("-") || compFont;
+
+// Extract font WEIGHT from this layer's own current font (everything after the last hyphen).
+// e.g. "DuolingoSans-Regular" → "Regular"
+var myFont      = text.sourceText.style.font;
+var myParts     = myFont.split("-");
+var fontWeight  = myParts[myParts.length - 1];
+
+// Recombine: family from the language comp, weight from this layer.
+var finalFont   = fontFamily + "-" + fontWeight;
 
 // ---- Apply ----
 text.sourceText.style
-    .setFont(targetFont)
+    .setFont(finalFont)
     .setText(resultText);

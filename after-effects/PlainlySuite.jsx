@@ -723,9 +723,10 @@ Panels:
   // LocaleFont expression, inlined so it can be applied to any text layer.
   var AUTO_FONT_EXPR = [
     'footage("Duolingo_locale_engine.jsx").sourceData;',
-    'var contextItems = ["App", "Marketing", "Marketing-Feather"];',
-    'var contextIdx   = effect("Duo AutoFont")(1);',
-    'var context      = contextItems[contextIdx - 1] || "App";',
+    '// Context: Marketing-Feather > Marketing > App (last checked wins)',
+    'var context = "App";',
+    'try { if (effect("AutoFont: Marketing")(1))         context = "Marketing";         } catch(e) {}',
+    'try { if (effect("AutoFont: Marketing-Feather")(1)) context = "Marketing-Feather"; } catch(e) {}',
     'var compNames = {',
     '    "App":               ":: LANGUAGE COMP_APP",',
     '    "Marketing":         ":: LANGUAGE COMP_MARKETING",',
@@ -788,27 +789,15 @@ Panels:
           if (!(lyr instanceof TextLayer)) { skipped++; continue; }
 
           try {
-            // ---- Add Dropdown Menu Control effect ----
-            var fx = null;
-            // Reuse existing "Duo AutoFont" effect if already present
-            try { fx = lyr.property("Effects").property("Duo AutoFont"); } catch(e) {}
-            if (!fx) {
-              fx = lyr.property("Effects").addProperty("ADBE Dropdown Control");
-              // Set items BEFORE renaming — rename can disrupt the property reference
-              var _items = ["App", "Marketing", "Marketing-Feather"];
-              var _setOk = false;
-              try {
-                fx.property(1).propertyParameters = { items: _items };
-                _setOk = (fx.property(1).propertyParameters.items[0] === "App");
-              } catch(e) {}
-              fx.name = "Duo AutoFont";
-              // If propertyParameters silently failed, swap to three named checkboxes
-              if (!_setOk) {
-                lyr.property("Effects").removeProperty(fx);
-                for (var _ci = 0; _ci < _items.length; _ci++) {
-                  var _chk = lyr.property("Effects").addProperty("ADBE Checkbox Control");
-                  _chk.name = "AutoFont: " + _items[_ci];
-                }
+            // ---- Add AutoFont checkbox controls ----
+            // (Dropdown Menu Control items can't be set programmatically in AE 2025)
+            var _ctxNames = ["AutoFont: App", "AutoFont: Marketing", "AutoFont: Marketing-Feather"];
+            for (var _ci = 0; _ci < _ctxNames.length; _ci++) {
+              var _existing = null;
+              try { _existing = lyr.property("Effects").property(_ctxNames[_ci]); } catch(e) {}
+              if (!_existing) {
+                var _chk = lyr.property("Effects").addProperty("ADBE Checkbox Control");
+                _chk.name = _ctxNames[_ci];
               }
             }
 

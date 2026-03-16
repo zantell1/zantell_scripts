@@ -4,8 +4,7 @@
 //
 // Drop on the Source Text of a layer named "Language - N".
 // Pulls the Nth item from a CSV source layer, detects its locale,
-// and applies the correct font from the language comp.
-// Weight is preserved from this layer's own assigned font.
+// and applies the exact font from the matching language comp layer.
 //
 // Setup:
 //   1. Add the "Duo AutoFont" Dropdown Menu Control effect to this
@@ -18,13 +17,14 @@
 //        :: LANGUAGE COMP_MARKETING
 //        :: LANGUAGE COMP_FEATHER
 //
+//      Set each locale layer to the exact font + weight you want.
+//
 //   3. A CSV source layer (e.g. EDIT_CourseOrder_bold) containing
 //      a comma-separated list: English, مرحبا, नमस्ते, こんにちは
 // ============================================================
 
 footage("Duolingo_locale_engine.jsx").sourceData;
 
-// ---- Context dropdown ----
 var contextItems = ["App", "Marketing", "Marketing-Feather"];
 var contextIdx   = effect("Duo AutoFont")(1);
 var context      = contextItems[contextIdx - 1] || "App";
@@ -35,7 +35,6 @@ var compNames = {
     "Marketing-Feather": ":: LANGUAGE COMP_FEATHER"
 };
 
-// ---- CSV → resolved text ----
 var _csvDoc    = thisComp.layer("EDIT_CourseOrder_bold").text.sourceText;
 var csvText    = _csvDoc.text || String(_csvDoc);
 var langArray  = csvText.split(",");
@@ -45,7 +44,6 @@ var resultText = (layerNum > 0 && layerNum - 1 < langArray.length)
     ? langArray[layerNum - 1].trim()
     : "error";
 
-// ---- Locale detection → font from language comp ----
 var locale = duo_detect_locale(resultText);
 
 var targetLayer = null;
@@ -62,16 +60,10 @@ if (!targetLayer) {
     targetLayer = _find_layer(compNames["App"], locale);
 }
 
-// Read weight BEFORE mutation to avoid self-poisoning loop.
-var myFont     = text.sourceText.style.font;
-var myParts    = myFont.split("-");
-var fontWeight = myParts[myParts.length - 1];
+var finalFont = targetLayer
+    ? targetLayer.text.sourceText.style.font
+    : text.sourceText.style.font;
 
-var compFont   = targetLayer ? targetLayer.text.sourceText.style.font : myFont;
-var compParts  = compFont.split("-");
-var fontFamily = compParts.slice(0, compParts.length - 1).join("-") || compFont;
-
-// ---- Apply ----
 text.sourceText.style
-    .setFont(fontFamily + "-" + fontWeight)
+    .setFont(finalFont)
     .setText(resultText);

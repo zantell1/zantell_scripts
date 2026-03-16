@@ -4,8 +4,7 @@
 //
 // Drop on the Source Text property of any text layer.
 // Detects the script of the layer's own text, pulls the correct
-// font family from the appropriate language precomp, and keeps
-// the layer's current font weight.
+// font from the appropriate language precomp, and applies it.
 //
 // Setup:
 //   1. Add the "Duo AutoFont" Dropdown Menu Control effect to this
@@ -17,6 +16,10 @@
 //        :: LANGUAGE COMP_APP
 //        :: LANGUAGE COMP_MARKETING
 //        :: LANGUAGE COMP_FEATHER
+//
+//      Set each locale layer to the exact font + weight you want
+//      (e.g. NotoSansArabic-Regular on AR). The expression uses
+//      the full PostScript name directly — no weight recombination.
 // ============================================================
 
 footage("Duolingo_locale_engine.jsx").sourceData;
@@ -48,15 +51,14 @@ if (!targetLayer) {
     targetLayer = _find_layer(compNames["App"], locale);
 }
 
-var compFont   = targetLayer
+// Use the exact font name from the language comp — no weight recombination.
+// If AE can't find a recombined name (e.g. variable fonts), it silently
+// falls back to a system font (Damascus, etc.).  Using the full name as-is
+// avoids this entirely.
+var finalFont = targetLayer
     ? targetLayer.text.sourceText.style.font
     : text.sourceText.style.font;
-var compParts  = compFont.split("-");
-var fontFamily = compParts.slice(0, compParts.length - 1).join("-") || compFont;
-
-var myParts    = text.sourceText.style.font.split("-");
-var fontWeight = myParts[myParts.length - 1];
 
 text.sourceText.style
-    .setFont(fontFamily + "-" + fontWeight)
+    .setFont(finalFont)
     .setText(txt);

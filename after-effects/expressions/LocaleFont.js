@@ -4,15 +4,13 @@
 //
 // Drop on the Source Text property of any text layer.
 // Detects the script of the layer's own text, pulls the correct
-// font family from :: LANGUAGE COMP, and keeps the layer's
-// current font weight.
+// font family from the appropriate language precomp, and keeps
+// the layer's current font weight.
 //
 // Setup:
-//   1. Add three Checkbox Controls to this layer:
-//        AutoFont: App              (always present, implied default)
-//        AutoFont: Marketing        (check to use Marketing fonts)
-//        AutoFont: Marketing-Feather (check to use Feather for Latin)
-//      Use PlainlySuite > Auto Font to add these automatically.
+//   1. Add the "Duo AutoFont" Dropdown Menu Control effect to this
+//      layer (use PlainlySuite > Auto Font, or apply DuoAutoFont.ffx).
+//      Items: App | Marketing | Marketing-Feather
 //
 //   2. Three precomps, each with layers named by locale code
 //      (AR, EN, JA, KO, HI, etc.):
@@ -23,10 +21,9 @@
 
 footage("Duolingo_locale_engine.jsx").sourceData;
 
-// Context: Marketing-Feather > Marketing > App (last checked wins)
-var context = "App";
-try { if (effect("AutoFont: Marketing")(1))         context = "Marketing";         } catch(e) {}
-try { if (effect("AutoFont: Marketing-Feather")(1)) context = "Marketing-Feather"; } catch(e) {}
+var contextItems = ["App", "Marketing", "Marketing-Feather"];
+var contextIdx   = effect("Duo AutoFont")(1);
+var context      = contextItems[contextIdx - 1] || "App";
 
 var compNames = {
     "App":               ":: LANGUAGE COMP_APP",

@@ -1026,32 +1026,80 @@ Panels:
   };
 
   // ============================================================
-  // MAIN — build tabbed panel
+  // MAIN — sidebar nav + content area
   // ============================================================
 
   var win = (thisObj instanceof Panel)
     ? thisObj
     : new Window("palette", "Plainly Suite", undefined, { resizable: true });
 
-  win.orientation = "column";
+  win.orientation   = "column";
   win.alignChildren = ["fill", "fill"];
-  win.margins = 0;
-  win.spacing = 0;
+  win.margins       = 4;
+  win.spacing       = 0;
 
-  var tabs = win.add("tabbedpanel");
-  tabs.alignment = ["fill", "fill"];
+  var mainRow = win.add("group");
+  mainRow.orientation   = "row";
+  mainRow.alignChildren = ["fill", "fill"];
+  mainRow.spacing       = 6;
+  mainRow.margins       = 0;
 
-  var arabicTab     = tabs.add("tab", undefined, "Arabic Duplicator");
-  var paramTab      = tabs.add("tab", undefined, "Parameter Creator");
-  var autoFontTab   = tabs.add("tab", undefined, "Auto Font");
-  var fontWeightTab = tabs.add("tab", undefined, "Font Weight");
-  var rendererTab   = tabs.add("tab", undefined, "Renderer Check");
+  // ---- Left sidebar nav ----
+  var NAV_LABELS = [
+    "Arabic Duplicator",
+    "Parameter Creator",
+    "Auto Font",
+    "Font Weight",
+    "Renderer Check"
+  ];
+  var nav = mainRow.add("listbox", undefined, NAV_LABELS);
+  nav.alignment          = ["left", "fill"];
+  nav.preferredSize      = [130, -1];
 
-  build_arabic_ui(arabicTab);
-  build_param_creator_ui(paramTab);
-  build_auto_font_ui(autoFontTab);
-  build_font_weight_ui(fontWeightTab);
-  build_renderer_check_ui(rendererTab);
+  // ---- Right content area ----
+  var contentStack = mainRow.add("group");
+  contentStack.orientation   = "column";
+  contentStack.alignChildren = ["fill", "fill"];
+  contentStack.alignment     = ["fill", "fill"];
+  contentStack.margins       = 0;
+  contentStack.spacing       = 0;
+
+  var _makePanelGroup = function () {
+    var g = contentStack.add("group");
+    g.orientation   = "column";
+    g.alignChildren = ["fill", "fill"];
+    g.margins       = 0;
+    g.spacing       = 0;
+    return g;
+  };
+
+  var pArabic   = _makePanelGroup();
+  var pParam    = _makePanelGroup();
+  var pAutoFont = _makePanelGroup();
+  var pWeight   = _makePanelGroup();
+  var pRenderer = _makePanelGroup();
+
+  var allPanels = [pArabic, pParam, pAutoFont, pWeight, pRenderer];
+
+  build_arabic_ui(pArabic);
+  build_param_creator_ui(pParam);
+  build_auto_font_ui(pAutoFont);
+  build_font_weight_ui(pWeight);
+  build_renderer_check_ui(pRenderer);
+
+  // Show first panel, hide the rest
+  for (var _pi = 1; _pi < allPanels.length; _pi++) {
+    allPanels[_pi].visible = false;
+  }
+  nav.selection = 0;
+
+  nav.onChange = function () {
+    var idx = nav.selection ? nav.selection.index : 0;
+    for (var _i = 0; _i < allPanels.length; _i++) {
+      allPanels[_i].visible = (_i === idx);
+    }
+    if (win.layout) { win.layout.layout(true); }
+  };
 
   win.onResizing = win.onResize = function () { this.layout.resize(); };
 

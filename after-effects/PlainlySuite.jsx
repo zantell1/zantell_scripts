@@ -794,12 +794,22 @@ Panels:
             try { fx = lyr.property("Effects").property("Duo AutoFont"); } catch(e) {}
             if (!fx) {
               fx = lyr.property("Effects").addProperty("ADBE Dropdown Control");
+              // Set items BEFORE renaming — rename can disrupt the property reference
+              var _items = ["App", "Marketing", "Marketing-Feather"];
+              var _setOk = false;
+              try {
+                fx.property(1).propertyParameters = { items: _items };
+                _setOk = (fx.property(1).propertyParameters.items[0] === "App");
+              } catch(e) {}
               fx.name = "Duo AutoFont";
-              // Set items via match name (more reliable than index)
-              var menuProp = fx.property("ADBE Dropdown Control Values");
-              menuProp.propertyParameters = {
-                items: ["App", "Marketing", "Marketing-Feather"]
-              };
+              // If propertyParameters silently failed, swap to three named checkboxes
+              if (!_setOk) {
+                lyr.property("Effects").removeProperty(fx);
+                for (var _ci = 0; _ci < _items.length; _ci++) {
+                  var _chk = lyr.property("Effects").addProperty("ADBE Checkbox Control");
+                  _chk.name = "AutoFont: " + _items[_ci];
+                }
+              }
             }
 
             // ---- Apply expression to Source Text ----
@@ -817,7 +827,7 @@ Panels:
 
       var msg = "Applied to " + applied + " layer" + (applied !== 1 ? "s" : "") + ".";
       if (skipped > 0) { msg += " " + skipped + " non-text skipped."; }
-      if (errors.length > 0) { msg += " " + errors.length + " error(s)."; }
+      if (errors.length > 0) { msg += " Errors: " + errors.join("; "); }
       status.text = msg;
     };
   };

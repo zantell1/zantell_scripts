@@ -5,6 +5,7 @@ Dockable ScriptUI panel suite for After Effects.
 Panels:
 - Arabic Duplicator : duplicate/link layers with Arabic suffix and opacity gating
 - Parameter Creator : create Plainly parameter guide layers from selected properties
+- Auto Font         : apply Duo AutoFont effect + LocaleFont expression to selected layers
 - Font Weight       : batch-change font weight on selected text layers
 - Renderer Check    : find and fix comps not using Classic 3D renderer
 */
@@ -716,6 +717,112 @@ Panels:
   };
 
   // ============================================================
+  // AUTO FONT — logic + UI
+  // ============================================================
+
+  // LocaleFont expression, inlined so it can be applied to any text layer.
+  var AUTO_FONT_EXPR = [
+    'footage("Duolingo_locale_engine.jsx").sourceData;',
+    'var contextItems = ["App", "Marketing", "Marketing-Feather"];',
+    'var contextIdx   = effect("Duo AutoFont")(1);',
+    'var context      = contextItems[contextIdx - 1] || "App";',
+    'var compNames = {',
+    '    "App":               ":: LANGUAGE COMP_APP",',
+    '    "Marketing":         ":: LANGUAGE COMP_MARKETING",',
+    '    "Marketing-Feather": ":: LANGUAGE COMP_FEATHER"',
+    '};',
+    'var txt    = text.sourceText;',
+    'var locale = duo_detect_locale(txt);',
+    'var targetLayer = null;',
+    'var _find_layer = function (compName, layerName) {',
+    '    try { return comp(compName).layer(layerName); } catch(e) { return null; }',
+    '};',
+    'targetLayer = _find_layer(compNames[context], locale);',
+    'if (!targetLayer && context === "Marketing-Feather") {',
+    '    targetLayer = _find_layer(compNames["Marketing"], locale);',
+    '}',
+    'if (!targetLayer) {',
+    '    targetLayer = _find_layer(compNames["App"], locale);',
+    '}',
+    'var compFont   = targetLayer',
+    '    ? targetLayer.text.sourceText.style.font',
+    '    : text.sourceText.style.font;',
+    'var compParts  = compFont.split("-");',
+    'var fontFamily = compParts.slice(0, compParts.length - 1).join("-") || compFont;',
+    'var myParts    = text.sourceText.style.font.split("-");',
+    'var fontWeight = myParts[myParts.length - 1];',
+    'text.sourceText.style',
+    '    .setFont(fontFamily + "-" + fontWeight)',
+    '    .setText(txt);'
+  ].join("\n");
+
+  var build_auto_font_ui = function (container) {
+    container.orientation   = "column";
+    container.alignChildren = ["fill", "top"];
+    container.margins       = 8;
+    container.spacing       = 6;
+
+    var info = container.add("statictext", undefined,
+      "Adds the \"Duo AutoFont\" dropdown effect and wires the LocaleFont expression to the Source Text of each selected text layer.",
+      { multiline: true });
+    info.alignment = ["fill", "top"];
+
+    var applyBtn = container.add("button", undefined, "Apply to Selected Layers");
+    var status   = container.add("statictext", undefined, "Select text layers then click Apply.");
+    status.alignment = ["fill", "bottom"];
+
+    applyBtn.onClick = function () {
+      var activeComp = null;
+      try { activeComp = app.project.activeItem; } catch(e) {}
+      if (!(activeComp instanceof CompItem)) { status.text = "Open a comp first."; return; }
+
+      var layers   = activeComp.selectedLayers;
+      var applied  = 0;
+      var skipped  = 0;
+      var errors   = [];
+
+      app.beginUndoGroup("PlainlySuite: Apply Auto Font");
+      try {
+        for (var i = 0; i < layers.length; i++) {
+          var lyr = layers[i];
+          if (!(lyr instanceof TextLayer)) { skipped++; continue; }
+
+          try {
+            // ---- Add Dropdown Menu Control effect ----
+            var fx = null;
+            // Reuse existing "Duo AutoFont" effect if already present
+            try { fx = lyr.property("Effects").property("Duo AutoFont"); } catch(e) {}
+            if (!fx) {
+              fx = lyr.property("Effects").addProperty("ADBE Dropdown Control");
+              fx.name = "Duo AutoFont";
+              try {
+                fx.property(1).propertyParameters = {
+                  items: ["App", "Marketing", "Marketing-Feather"]
+                };
+              } catch(e) {}
+            }
+
+            // ---- Apply expression to Source Text ----
+            var srcText = lyr.property("Source Text");
+            srcText.expression        = AUTO_FONT_EXPR;
+            srcText.expressionEnabled = true;
+
+            applied++;
+          } catch(e) {
+            errors.push(lyr.name + ": " + e.message);
+          }
+        }
+      } catch(e) {}
+      app.endUndoGroup();
+
+      var msg = "Applied to " + applied + " layer" + (applied !== 1 ? "s" : "") + ".";
+      if (skipped > 0) { msg += " " + skipped + " non-text skipped."; }
+      if (errors.length > 0) { msg += " " + errors.length + " error(s)."; }
+      status.text = msg;
+    };
+  };
+
+  // ============================================================
   // FONT WEIGHT — logic + UI
   // ============================================================
 
@@ -936,11 +1043,13 @@ Panels:
 
   var arabicTab     = tabs.add("tab", undefined, "Arabic Duplicator");
   var paramTab      = tabs.add("tab", undefined, "Parameter Creator");
+  var autoFontTab   = tabs.add("tab", undefined, "Auto Font");
   var fontWeightTab = tabs.add("tab", undefined, "Font Weight");
   var rendererTab   = tabs.add("tab", undefined, "Renderer Check");
 
   build_arabic_ui(arabicTab);
   build_param_creator_ui(paramTab);
+  build_auto_font_ui(autoFontTab);
   build_font_weight_ui(fontWeightTab);
   build_renderer_check_ui(rendererTab);
 

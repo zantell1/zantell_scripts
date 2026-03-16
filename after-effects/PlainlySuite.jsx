@@ -723,10 +723,9 @@ Panels:
   // LocaleFont expression, inlined so it can be applied to any text layer.
   var AUTO_FONT_EXPR = [
     'footage("Duolingo_locale_engine.jsx").sourceData;',
-    '// Context: Marketing-Feather > Marketing > App (last checked wins)',
-    'var context = "App";',
-    'try { if (effect("AutoFont: Marketing")(1))         context = "Marketing";         } catch(e) {}',
-    'try { if (effect("AutoFont: Marketing-Feather")(1)) context = "Marketing-Feather"; } catch(e) {}',
+    'var contextItems = ["App", "Marketing", "Marketing-Feather"];',
+    'var contextIdx   = effect("Duo AutoFont")(1);',
+    'var context      = contextItems[contextIdx - 1] || "App";',
     'var compNames = {',
     '    "App":               ":: LANGUAGE COMP_APP",',
     '    "Marketing":         ":: LANGUAGE COMP_MARKETING",',
@@ -789,16 +788,16 @@ Panels:
           if (!(lyr instanceof TextLayer)) { skipped++; continue; }
 
           try {
-            // ---- Add AutoFont checkbox controls ----
-            // (Dropdown Menu Control items can't be set programmatically in AE 2025)
-            var _ctxNames = ["AutoFont: App", "AutoFont: Marketing", "AutoFont: Marketing-Feather"];
-            for (var _ci = 0; _ci < _ctxNames.length; _ci++) {
-              var _existing = null;
-              try { _existing = lyr.property("Effects").property(_ctxNames[_ci]); } catch(e) {}
-              if (!_existing) {
-                var _chk = lyr.property("Effects").addProperty("ADBE Checkbox Control");
-                _chk.name = _ctxNames[_ci];
+            // ---- Apply Duo AutoFont preset (.ffx next to this script) ----
+            var _alreadyHas = false;
+            try { _alreadyHas = !!lyr.property("Effects").property("Duo AutoFont"); } catch(e) {}
+            if (!_alreadyHas) {
+              var _presetFile = new File(new File($.fileName).parent.absoluteURI + "/DuoAutoFont.ffx");
+              if (!_presetFile.exists) {
+                errors.push(lyr.name + ": DuoAutoFont.ffx not found at " + _presetFile.fsName);
+                continue;
               }
+              lyr.applyPreset(_presetFile);
             }
 
             // ---- Apply expression to Source Text ----

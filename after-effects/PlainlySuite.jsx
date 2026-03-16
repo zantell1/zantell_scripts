@@ -795,11 +795,11 @@ Panels:
             if (!fx) {
               fx = lyr.property("Effects").addProperty("ADBE Dropdown Control");
               fx.name = "Duo AutoFont";
-              try {
-                fx.property(1).propertyParameters = {
-                  items: ["App", "Marketing", "Marketing-Feather"]
-                };
-              } catch(e) {}
+              // Set items via match name (more reliable than index)
+              var menuProp = fx.property("ADBE Dropdown Control Values");
+              menuProp.propertyParameters = {
+                items: ["App", "Marketing", "Marketing-Feather"]
+              };
             }
 
             // ---- Apply expression to Source Text ----

@@ -5,6 +5,7 @@
 // Drop on the Source Text of a layer named "Language - N".
 // Pulls the Nth item from a CSV source layer, detects its locale,
 // and applies the correct font from the language comp.
+// Weight is preserved from this layer's own assigned font.
 //
 // Setup:
 //   1. Add the "Duo AutoFont" Dropdown Menu Control effect to this
@@ -16,9 +17,6 @@
 //        :: LANGUAGE COMP_APP
 //        :: LANGUAGE COMP_MARKETING
 //        :: LANGUAGE COMP_FEATHER
-//
-//      Set each locale layer to the exact font + weight you want.
-//      The expression uses the full PostScript name directly.
 //
 //   3. A CSV source layer (e.g. EDIT_CourseOrder_bold) containing
 //      a comma-separated list: English, مرحبا, नमस्ते, こんにちは
@@ -64,12 +62,16 @@ if (!targetLayer) {
     targetLayer = _find_layer(compNames["App"], locale);
 }
 
-// Use the exact font name from the language comp — no weight recombination.
-var finalFont = targetLayer
-    ? targetLayer.text.sourceText.style.font
-    : text.sourceText.style.font;
+// Read weight BEFORE mutation to avoid self-poisoning loop.
+var myFont     = text.sourceText.style.font;
+var myParts    = myFont.split("-");
+var fontWeight = myParts[myParts.length - 1];
+
+var compFont   = targetLayer ? targetLayer.text.sourceText.style.font : myFont;
+var compParts  = compFont.split("-");
+var fontFamily = compParts.slice(0, compParts.length - 1).join("-") || compFont;
 
 // ---- Apply ----
 text.sourceText.style
-    .setFont(finalFont)
+    .setFont(fontFamily + "-" + fontWeight)
     .setText(resultText);

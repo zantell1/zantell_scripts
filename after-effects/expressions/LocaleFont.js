@@ -5,7 +5,7 @@
 // Drop on the Source Text property of any text layer.
 // Detects the script of the layer's own text, looks up the
 // matching locale layer in the appropriate language precomp,
-// and applies its exact font (family + weight) to this layer.
+// and applies its exact font to this layer.
 //
 // Setup:
 //   1. Add the "Duo AutoFont" Dropdown Menu Control effect to this
@@ -17,9 +17,6 @@
 //        :: LANGUAGE COMP_APP
 //        :: LANGUAGE COMP_MARKETING
 //        :: LANGUAGE COMP_FEATHER
-//
-//      Set each locale layer to the exact font + weight you want.
-//      The expression applies it as-is — no automatic weight logic.
 // ============================================================
 
 footage("Duolingo_locale_engine.jsx").sourceData;
@@ -51,10 +48,15 @@ if (!targetLayer) {
     targetLayer = _find_layer(compNames["App"], locale);
 }
 
-var finalFont = targetLayer
-    ? targetLayer.text.sourceText.style.font
-    : text.sourceText.style.font;
-
-text.sourceText.style
-    .setFont(finalFont)
-    .setText(txt);
+try {
+    var finalFont = targetLayer
+        ? targetLayer.text.sourceText.style.font
+        : text.sourceText.style.font;
+    if (finalFont && finalFont !== text.sourceText.style.font) {
+        text.sourceText.style.setFont(finalFont).setText(txt);
+    } else {
+        text.sourceText.style.setText(txt);
+    }
+} catch(e) {
+    text.sourceText.style.setText(txt);
+}

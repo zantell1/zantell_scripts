@@ -3,9 +3,9 @@
 // Requires: JavaScript expression engine (File > Project Settings)
 //
 // Drop on the Source Text property of any text layer.
-// Detects the script of the layer's own text, pulls the correct
-// font FAMILY from the appropriate language precomp, and keeps
-// the layer's current font WEIGHT.
+// Detects the script of the layer's own text, looks up the
+// matching locale layer in the appropriate language precomp,
+// and applies its exact font (family + weight) to this layer.
 //
 // Setup:
 //   1. Add the "Duo AutoFont" Dropdown Menu Control effect to this
@@ -18,8 +18,8 @@
 //        :: LANGUAGE COMP_MARKETING
 //        :: LANGUAGE COMP_FEATHER
 //
-//      Set each locale layer to any weight of the correct font —
-//      only the family name is used; weight comes from this layer.
+//      Set each locale layer to the exact font + weight you want.
+//      The expression applies it as-is — no automatic weight logic.
 // ============================================================
 
 footage("Duolingo_locale_engine.jsx").sourceData;
@@ -51,18 +51,10 @@ if (!targetLayer) {
     targetLayer = _find_layer(compNames["App"], locale);
 }
 
-// Read this layer's weight BEFORE any mutation to avoid a self-poisoning loop
-// (where a previous frame's substituted font gets used as the weight source).
-var myFont     = text.sourceText.style.font;
-var myParts    = myFont.split("-");
-var fontWeight = myParts[myParts.length - 1];
-
-var compFont   = targetLayer
+var finalFont = targetLayer
     ? targetLayer.text.sourceText.style.font
-    : myFont;
-var compParts  = compFont.split("-");
-var fontFamily = compParts.slice(0, compParts.length - 1).join("-") || compFont;
+    : text.sourceText.style.font;
 
 text.sourceText.style
-    .setFont(fontFamily + "-" + fontWeight)
+    .setFont(finalFont)
     .setText(txt);

@@ -17,8 +17,6 @@
 //        :: LANGUAGE COMP_MARKETING
 //        :: LANGUAGE COMP_FEATHER
 //
-//      Set each locale layer to the exact font + weight you want.
-//
 //   3. A CSV source layer (e.g. EDIT_CourseOrder_bold) containing
 //      a comma-separated list: English, مرحبا, नमस्ते, こんにちは
 // ============================================================
@@ -60,10 +58,15 @@ if (!targetLayer) {
     targetLayer = _find_layer(compNames["App"], locale);
 }
 
-var finalFont = targetLayer
-    ? targetLayer.text.sourceText.style.font
-    : text.sourceText.style.font;
-
-text.sourceText.style
-    .setFont(finalFont)
-    .setText(resultText);
+try {
+    var finalFont = targetLayer
+        ? targetLayer.text.sourceText.style.font
+        : text.sourceText.style.font;
+    if (finalFont && finalFont !== text.sourceText.style.font) {
+        text.sourceText.style.setFont(finalFont).setText(resultText);
+    } else {
+        text.sourceText.style.setText(resultText);
+    }
+} catch(e) {
+    text.sourceText.style.setText(resultText);
+}

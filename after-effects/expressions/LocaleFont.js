@@ -9,18 +9,20 @@
 //
 // Setup:
 //   1. Add Effect > Expression Controls > Dropdown Menu Control
-//      to this layer. Name it "Font Context".
-//      Set items to:  App | Marketing | Feather
+//      to this layer. Name it "Duo AutoFont".
+//      Set items to:  App | Marketing | Marketing-Feather
 //
 //   2. In :: LANGUAGE COMP, name layers as {LOCALE}-{Context}:
-//      AR-App, AR-Marketing, EN-App, EN-Feather, JA-App, etc.
+//      AR-App, AR-Marketing, EN-App, EN-Marketing, EN-Marketing-Feather
+//      Non-Latin locales without a Marketing-Feather layer fall back
+//      to their Marketing variant automatically.
 // ============================================================
 
 footage("Duolingo_locale_engine.jsx").sourceData;
 
 // ---- Context dropdown ----
-var contextItems = ["App", "Marketing", "Feather"];
-var contextIdx   = effect("Font Context")(1);
+var contextItems = ["App", "Marketing", "Marketing-Feather"];
+var contextIdx   = effect("Duo AutoFont")(1);
 var context      = contextItems[contextIdx - 1] || "App";
 
 // ---- Read this layer's own text ----
@@ -32,6 +34,11 @@ var langComp = comp(":: LANGUAGE COMP");
 
 var targetLayer = null;
 try { targetLayer = langComp.layer(locale + "-" + context); } catch(e) {}
+
+// Fallback chain: Marketing-Feather → Marketing → App
+if (!targetLayer && context === "Marketing-Feather") {
+    try { targetLayer = langComp.layer(locale + "-Marketing"); } catch(e) {}
+}
 if (!targetLayer) {
     try { targetLayer = langComp.layer(locale + "-App"); } catch(e) {}
 }

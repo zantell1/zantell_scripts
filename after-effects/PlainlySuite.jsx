@@ -5,9 +5,10 @@ Dockable ScriptUI panel suite for After Effects.
 Panels:
 - Arabic Duplicator : duplicate/link layers with Arabic suffix and opacity gating
 - Parameter Creator : create Plainly parameter guide layers from selected properties
-- Auto Font         : apply Duo AutoFont effect + LocaleFont expression to selected layers
+- Auto Font         : apply inline LocaleFont expression to selected text layers
 - Font Weight       : batch-change font weight on selected text layers
 - Renderer Check    : find and fix comps not using Classic 3D renderer
+- Lorem             : non-Latin sample text snippets for quick copy-paste testing
 */
 
 (function PlainlySuite(thisObj) {
@@ -1039,6 +1040,78 @@ Panels:
   };
 
   // ============================================================
+  // LOREM — non-Latin sample text snippets
+  // ============================================================
+
+  var LOREM_SAMPLES = [
+    { label: "AR — Arabic",       text: "مرحبًا بالعالم، هذا نص تجريبي لاختبار الخطوط العربية" },
+    { label: "BN — Bengali",      text: "হ্যালো বিশ্ব, এটি বাংলা ফন্ট পরীক্ষার জন্য একটি নমুনা পাঠ্য" },
+    { label: "EL — Greek",        text: "Γεια σου κόσμε, αυτό είναι ένα δοκιμαστικό κείμενο" },
+    { label: "HI — Hindi",        text: "नमस्ते दुनिया, यह फ़ॉन्ट परीक्षण के लिए एक नमूना पाठ है" },
+    { label: "TA — Tamil",        text: "வணக்கம் உலகம், இது எழுத்துரு சோதனைக்கான மாதிரி உரை" },
+    { label: "TE — Telugu",       text: "హలో ప్రపంచం, ఇది ఫాంట్ పరీక్ష కోసం నమూనా వచనం" },
+    { label: "TH — Thai",         text: "สวัสดีชาวโลก นี่คือข้อความตัวอย่างสำหรับทดสอบฟอนต์" },
+    { label: "KO — Korean",       text: "안녕하세요 세계, 이것은 글꼴 테스트를 위한 샘플 텍스트입니다" },
+    { label: "JA — Japanese",     text: "こんにちは世界、これはフォントテスト用のサンプルテキストです" },
+    { label: "ZH-CN — Chinese S", text: "你好世界，这是用于字体测试的示例文本" },
+    { label: "ZH-TW — Chinese T", text: "你好世界，這是用於字體測試的範例文字" },
+    { label: "UK — Ukrainian",    text: "Привіт світе, це зразок тексту для тестування шрифтів" },
+    { label: "RU — Russian",      text: "Привет мир, это образец текста для тестирования шрифтов" },
+    { label: "VI — Vietnamese",   text: "Xin chào thế giới, đây là văn bản mẫu để kiểm tra phông chữ" },
+    { label: "CSV — All locales",
+      text: "Hello, مرحبًا, হ্যালো, Γεια, नमस्ते, வணக்கம், హలో, สวัสดี, 안녕, こんにちは, 你好, 你好, Привіт, Привет, Xin chào, Merhaba, Sziasztok, Ahoj, Cześć, Salut, Hallo, Bonjour, Hola, Hej, Hallo, Kumusta, Halo, Ciao" }
+  ];
+
+  var build_lorem_ui = function (container) {
+    container.orientation   = "column";
+    container.alignChildren = ["fill", "top"];
+    container.margins       = 8;
+    container.spacing       = 4;
+
+    var info = container.add("statictext", undefined,
+      "Click any row to copy its text to the clipboard.",
+      { multiline: false });
+    info.alignment = ["fill", "top"];
+
+    var list = container.add("listbox", undefined, [],
+      { numberOfColumns: 2, showHeaders: true,
+        columnTitles: ["Locale", "Sample Text"],
+        columnWidths: [110, 320] });
+    list.alignment     = ["fill", "fill"];
+    list.preferredSize = [-1, 340];
+
+    for (var i = 0; i < LOREM_SAMPLES.length; i++) {
+      var row = list.add("item", LOREM_SAMPLES[i].label);
+      row.subItems[0].text = LOREM_SAMPLES[i].text;
+    }
+
+    var status = container.add("statictext", undefined, "");
+    status.alignment = ["fill", "bottom"];
+
+    list.onDoubleClick = function () {
+      if (!list.selection) { return; }
+      var idx = list.selection.index;
+      var txt = LOREM_SAMPLES[idx].text;
+      // Copy to system clipboard via a temporary script command
+      var _cmd;
+      if ($.os.indexOf("Mac") !== -1) {
+        var _f = new File(Folder.temp.absoluteURI + "/plainly_clip.txt");
+        _f.open("w"); _f.encoding = "UTF-8"; _f.write(txt); _f.close();
+        _cmd = 'cat "' + _f.fsName + '" | pbcopy';
+        system.callSystem(_cmd);
+        _f.remove();
+      } else {
+        var _f = new File(Folder.temp.absoluteURI + "/plainly_clip.txt");
+        _f.open("w"); _f.encoding = "UTF-8"; _f.write(txt); _f.close();
+        _cmd = 'cmd /c "type \\"' + _f.fsName + '\\" | clip"';
+        system.callSystem(_cmd);
+        _f.remove();
+      }
+      status.text = "Copied: " + LOREM_SAMPLES[idx].label;
+    };
+  };
+
+  // ============================================================
   // MAIN — sidebar nav + content area
   // ============================================================
 
@@ -1063,7 +1136,8 @@ Panels:
     "Parameter Creator",
     "Auto Font",
     "Font Weight",
-    "Renderer Check"
+    "Renderer Check",
+    "Lorem"
   ];
   var nav = mainRow.add("listbox", undefined, NAV_LABELS);
   nav.alignment          = ["left", "fill"];
@@ -1091,14 +1165,16 @@ Panels:
   var pAutoFont = _makePanelGroup();
   var pWeight   = _makePanelGroup();
   var pRenderer = _makePanelGroup();
+  var pLorem    = _makePanelGroup();
 
-  var allPanels = [pArabic, pParam, pAutoFont, pWeight, pRenderer];
+  var allPanels = [pArabic, pParam, pAutoFont, pWeight, pRenderer, pLorem];
 
   build_arabic_ui(pArabic);
   build_param_creator_ui(pParam);
   build_auto_font_ui(pAutoFont);
   build_font_weight_ui(pWeight);
   build_renderer_check_ui(pRenderer);
+  build_lorem_ui(pLorem);
 
   // Show first panel, hide the rest
   for (var _pi = 1; _pi < allPanels.length; _pi++) {

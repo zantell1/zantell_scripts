@@ -720,8 +720,10 @@ Panels:
   // AUTO FONT — logic + UI
   // ============================================================
 
-  // LocaleFont expression — self-contained, no external JSX needed.
-  var AUTO_FONT_EXPR = [
+  // LocaleFont expression — self-contained, no external JSX or effect needed.
+  // The LANG_COMP variable at the top controls which weight/context comp is used.
+  var AUTO_FONT_EXPR_TEMPLATE = [
+    'const LANG_COMP = "::COMP_PLACEHOLDER::";',
     'const detect = (txt) => {',
     '  const s = String(txt);',
     '  switch (true) {',
@@ -754,33 +756,15 @@ Panels:
     '    default: return "EN";',
     '  }',
     '};',
-    'const COMP_NAMES = {',
-    '  "App Bold":    ":: LANGUAGE COMP_APP",',
-    '  "App Regular": ":: LANGUAGE COMP_regular",',
-    '  "App Medium":  ":: LANGUAGE COMP_medium",',
-    '  "Marketing":   ":: LANGUAGE COMP_MARKETING",',
-    '  "Feather":     ":: LANGUAGE COMP_FEATHER"',
-    '};',
-    'const ITEMS = ["App Bold", "App Regular", "App Medium", "Marketing", "Feather"];',
-    'const contextIdx = effect("Duo AutoFont")(1);',
-    'const context = ITEMS[contextIdx - 1] || "App Bold";',
     'const txt = text.sourceText;',
     'const locale = detect(txt);',
-    'const findLayer = (compName, name) => {',
-    '  try { return comp(compName).layer(name); } catch(e) { return null; }',
-    '};',
-    'let target = findLayer(COMP_NAMES[context], locale);',
-    'if (!target && context === "Feather") {',
-    '  target = findLayer(COMP_NAMES["Marketing"], locale);',
-    '}',
-    'if (!target) {',
-    '  target = findLayer(COMP_NAMES["App Bold"], locale);',
-    '}',
-    'const targetFont = target',
-    '  ? target.text.sourceText.style.font',
-    '  : text.sourceText.style.font;',
+    'const targetFont = comp(LANG_COMP).layer(locale).text.sourceText.style.font;',
     'text.sourceText.style.setFont(targetFont).setText(txt);'
   ].join("\n");
+
+  var _build_auto_font_expr = function (compName) {
+    return AUTO_FONT_EXPR_TEMPLATE.replace("::COMP_PLACEHOLDER::", compName);
+  };
 
   var build_auto_font_ui = function (container) {
     container.orientation   = "column";
@@ -789,9 +773,24 @@ Panels:
     container.spacing       = 6;
 
     var info = container.add("statictext", undefined,
-      "Adds the \"Duo AutoFont\" dropdown effect and wires an inline LocaleFont expression (no JSX dependency) to the Source Text of each selected text layer.",
+      "Wires an inline LocaleFont expression to the Source Text of each selected text layer. Choose the language comp below.",
       { multiline: true });
     info.alignment = ["fill", "top"];
+
+    var COMP_OPTIONS = [
+      ":: LANGUAGE COMP_APP",
+      ":: LANGUAGE COMP_regular",
+      ":: LANGUAGE COMP_medium",
+      ":: LANGUAGE COMP_MARKETING",
+      ":: LANGUAGE COMP_FEATHER"
+    ];
+    var COMP_LABELS = ["App Bold", "App Regular", "App Medium", "Marketing", "Feather"];
+
+    var compGroup = container.add("group");
+    compGroup.alignment = ["fill", "top"];
+    compGroup.add("statictext", undefined, "Comp:");
+    var compDrop = compGroup.add("dropdownlist", undefined, COMP_LABELS);
+    compDrop.selection = 0;
 
     var applyBtn = container.add("button", undefined, "Apply to Selected Layers");
     var status   = container.add("statictext", undefined, "Select text layers then click Apply.");
@@ -801,6 +800,10 @@ Panels:
       var activeComp = null;
       try { activeComp = app.project.activeItem; } catch(e) {}
       if (!(activeComp instanceof CompItem)) { status.text = "Open a comp first."; return; }
+
+      var selIdx   = compDrop.selection ? compDrop.selection.index : 0;
+      var compName = COMP_OPTIONS[selIdx];
+      var expr     = _build_auto_font_expr(compName);
 
       var layers   = activeComp.selectedLayers;
       var applied  = 0;
@@ -814,23 +817,9 @@ Panels:
           if (!(lyr instanceof TextLayer)) { skipped++; continue; }
 
           try {
-            // ---- Apply Duo AutoFont preset (.ffx next to this script) ----
-            var _alreadyHas = false;
-            try { _alreadyHas = !!lyr.property("Effects").property("Duo AutoFont"); } catch(e) {}
-            if (!_alreadyHas) {
-              var _presetFile = new File(new File($.fileName).parent.absoluteURI + "/DuoAutoFont.ffx");
-              if (!_presetFile.exists) {
-                errors.push(lyr.name + ": DuoAutoFont.ffx not found at " + _presetFile.fsName);
-                continue;
-              }
-              lyr.applyPreset(_presetFile);
-            }
-
-            // ---- Apply expression to Source Text ----
             var srcText = lyr.property("Source Text");
-            srcText.expression        = AUTO_FONT_EXPR;
+            srcText.expression        = expr;
             srcText.expressionEnabled = true;
-
             applied++;
           } catch(e) {
             errors.push(lyr.name + ": " + e.message);

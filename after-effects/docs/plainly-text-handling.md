@@ -1,6 +1,15 @@
 # Plainly Text Handling
 
-How we handle multilingual text and font switching across 28 languages in After Effects projects rendered via Plainly.
+## TL;DR for Animators
+
+- Every text layer that receives translated text needs a **LocaleFont expression** on its Source Text. The expression auto-detects the language and swaps to the correct font.
+- The first line of the expression picks the font weight: change `LANG_COMP` to `_APP` (bold), `_regular`, `_medium`, `_MARKETING`, or `_FEATHER`.
+- For **CSV-driven layers** (Language - 1, Language - 2, etc.), use the **LanguageOrder expression** instead. Same idea, but it reads from a comma-separated list on the `Plainly_CourseOrder` layer.
+- For **text inside precomps** driven by a layer in the parent comp: do NOT use Essential Graphics links. Instead, put the expression on the text layer inside the precomp with a direct `comp("Parent Comp").layer("DriverLayer")` reference.
+- **PlainlySuite panel** (Window > PlainlySuite.jsx) can batch-apply the expression: select text layers, pick the comp/weight from the dropdown, click Apply.
+- When packaging for Plainly, run the collect — every font that appears in the project must be in the Fonts folder, including fallback fonts AE assigns automatically (like Myriad Pro).
+
+---
 
 ## Overview
 

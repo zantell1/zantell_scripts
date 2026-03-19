@@ -7,6 +7,7 @@
 - For **CSV-driven layers** (Language - 1, Language - 2, etc.), use the **LanguageOrder expression** instead. Same idea, but it reads from a comma-separated list on the `Plainly_CourseOrder` layer.
 - For **text inside precomps** driven by a layer in the parent comp: do NOT use Essential Graphics links. Instead, put the expression on the text layer inside the precomp with a direct `comp("Parent Comp").layer("DriverLayer")` reference.
 - **PlainlySuite panel** (Window > PlainlySuite.jsx) can batch-apply the expression: select text layers, pick the comp/weight from the dropdown, click Apply.
+- **Select Same Font** (PlainlySuite): select one text layer, then run the tool to multi-select every text layer in the same comp whose Source Text resolves to the same PostScript font at the current time — useful for retiming or batch edits.
 - When packaging for Plainly, run the collect — every font that appears in the project must be in the Fonts folder, including fallback fonts AE assigns automatically (like Myriad Pro).
 
 ---

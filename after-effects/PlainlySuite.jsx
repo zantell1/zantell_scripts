@@ -5,8 +5,9 @@ Dockable ScriptUI panel suite for After Effects.
 Panels:
 - Arabic Duplicator : duplicate/link layers with Arabic suffix and opacity gating
 - Parameter Creator : create Plainly parameter guide layers from selected properties
-- Auto Font         : apply Duo AutoFont effect + LocaleFont expression to selected layers
+- Auto Font         : apply LocaleFont expression to selected layers
 - Font Weight       : batch-change font weight on selected text layers
+- Select Same Font  : select all text layers in the comp with the same PostScript font
 - Renderer Check    : find and fix comps not using Classic 3D renderer
 */
 
@@ -922,6 +923,90 @@ Panels:
   };
 
   // ============================================================
+  // SELECT SAME FONT — logic + UI
+  // ============================================================
+
+  var _text_layer_ps_font_at_time = function (lyr, comp, t) {
+    if (!(lyr instanceof TextLayer)) { return null; }
+    var prop = null;
+    try { prop = lyr.property("Source Text"); } catch (e) {}
+    if (!prop) { return null; }
+    var doc = null;
+    try {
+      doc = prop.valueAtTime(t, false);
+    } catch (e) {
+      try { doc = prop.value; } catch (e2) { return null; }
+    }
+    if (!doc || doc.font === undefined || doc.font === null) { return null; }
+    var name = String(doc.font).replace(/^\s+|\s+$/g, "");
+    return name.length ? name : null;
+  };
+
+  var build_select_same_font_ui = function (container) {
+    container.orientation   = "column";
+    container.alignChildren = ["fill", "top"];
+    container.margins       = 8;
+    container.spacing       = 6;
+
+    var info = container.add("statictext", undefined,
+      "Uses the first selected text layer as the reference. Selects every text layer in the same comp whose Source Text uses the same PostScript font at the current time (includes expression results).",
+      { multiline: true });
+    info.alignment = ["fill", "top"];
+
+    var runBtn = container.add("button", undefined, "Select Matching Text Layers");
+    var status = container.add("statictext", undefined, "Select one text layer, then click.");
+    status.alignment = ["fill", "bottom"];
+
+    runBtn.onClick = function () {
+      var comp = null;
+      try { comp = app.project.activeItem; } catch (e) {}
+      if (!(comp instanceof CompItem)) {
+        status.text = "Open a comp first.";
+        return;
+      }
+
+      var sel = comp.selectedLayers;
+      var ref = null;
+      for (var s = 0; s < sel.length; s++) {
+        if (sel[s] instanceof TextLayer) { ref = sel[s]; break; }
+      }
+      if (!ref) {
+        status.text = "Select at least one text layer.";
+        return;
+      }
+
+      var t = comp.time;
+      var targetFont = _text_layer_ps_font_at_time(ref, comp, t);
+      if (!targetFont) {
+        status.text = "Could not read font from \"" + ref.name + "\".";
+        return;
+      }
+
+      var matched = 0;
+      app.beginUndoGroup("PlainlySuite: Select same font");
+      try {
+        for (var i = 1; i <= comp.numLayers; i++) {
+          try { comp.layer(i).selected = false; } catch (e) {}
+        }
+        for (var j = 1; j <= comp.numLayers; j++) {
+          var lyr = comp.layer(j);
+          if (!(lyr instanceof TextLayer)) { continue; }
+          var ps = _text_layer_ps_font_at_time(lyr, comp, t);
+          if (ps === targetFont) {
+            try {
+              lyr.selected = true;
+              matched++;
+            } catch (e) {}
+          }
+        }
+      } catch (e) {}
+      app.endUndoGroup();
+
+      status.text = matched + " layer" + (matched !== 1 ? "s" : "") + " selected (\"" + targetFont + "\").";
+    };
+  };
+
+  // ============================================================
   // RENDERER CHECK — logic + UI
   // ============================================================
 
@@ -1063,6 +1148,7 @@ Panels:
     "Parameter Creator",
     "Auto Font",
     "Font Weight",
+    "Select Same Font",
     "Renderer Check"
   ];
   var nav = mainRow.add("listbox", undefined, NAV_LABELS);
@@ -1090,14 +1176,16 @@ Panels:
   var pParam    = _makePanelGroup();
   var pAutoFont = _makePanelGroup();
   var pWeight   = _makePanelGroup();
+  var pSameFont = _makePanelGroup();
   var pRenderer = _makePanelGroup();
 
-  var allPanels = [pArabic, pParam, pAutoFont, pWeight, pRenderer];
+  var allPanels = [pArabic, pParam, pAutoFont, pWeight, pSameFont, pRenderer];
 
   build_arabic_ui(pArabic);
   build_param_creator_ui(pParam);
   build_auto_font_ui(pAutoFont);
   build_font_weight_ui(pWeight);
+  build_select_same_font_ui(pSameFont);
   build_renderer_check_ui(pRenderer);
 
   // Show first panel, hide the rest

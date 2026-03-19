@@ -39,6 +39,8 @@ The `detect()` function is inlined in every expression. It checks Unicode script
 4. **Latin with unique diacritics** — Vietnamese, Turkish, Hungarian, Czech, Polish, Romanian
 5. **General Latin** — German, Spanish, French, Swedish, fallback to English
 
+**Vietnamese note:** The VI regex only matches characters unique to Vietnamese (ơ, ư, and hook/dot tonal marks like ả, ạ, ắ, ầ, ẻ, etc.). Common Latin accents shared with other languages (á, é, í, ó, ú, à, è) are excluded to prevent false-positives on French, Spanish, Portuguese, and Italian text.
+
 ### Expression Variants
 
 All expressions share the same `detect()` function and the same `LANG_COMP` variable at the top for easy comp selection:

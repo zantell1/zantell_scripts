@@ -720,12 +720,47 @@ Panels:
   // AUTO FONT — logic + UI
   // ============================================================
 
+  // Inlined locale detection — no .jsx footage dependency, VI bug fixed.
+  var _DETECT_FN = [
+    'var duo_detect_locale = function (txt) {',
+    '    var s = String(txt);',
+    '    if (/\\p{Script=Arabic}/u.test(s))     return "AR";',
+    '    if (/\\p{Script=Bengali}/u.test(s))    return "BN";',
+    '    if (/\\p{Script=Greek}/u.test(s))      return "EL";',
+    '    if (/\\p{Script=Devanagari}/u.test(s)) return "HI";',
+    '    if (/\\p{Script=Tamil}/u.test(s))      return "TA";',
+    '    if (/\\p{Script=Telugu}/u.test(s))     return "TE";',
+    '    if (/\\p{Script=Thai}/u.test(s))       return "TH";',
+    '    if (/\\p{Script=Hangul}/u.test(s))     return "KO";',
+    '    if (/[\\p{sc=Hira}\\p{sc=Kana}]/u.test(s)) return "JA";',
+    '    if (/\\p{Script=Cyrillic}/u.test(s))   return /[\\u0456\\u0457\\u0454]/i.test(s) ? "UK" : "RU";',
+    '    if (/[\\u4E00-\\u9FA5]/u.test(s))      return "ZH-CN";',
+    '    if (/\\p{Script=Han}/u.test(s))        return "ZH-TW";',
+    '    if (/[\\u1EA3\\u1EA1\\u1EAF\\u1EB1\\u1EB3\\u1EB5\\u1EB7\\u1EA5\\u1EA7\\u1EA9\\u1EAB\\u1EAD\\u1EBB\\u1EBD\\u1EB9\\u1EBF\\u1EC1\\u1EC3\\u1EC5\\u1EC7\\u1EC9\\u1ECB\\u1ECF\\u1ECD\\u1ED1\\u1ED3\\u1ED5\\u1ED7\\u1ED9\\u1EDB\\u1EDD\\u1EDF\\u1EE1\\u1EE3\\u1EE7\\u1EE5\\u1EE9\\u1EEB\\u1EED\\u1EEF\\u1EF1\\u1EF3\\u1EF7\\u1EF9\\u1EF5\\u01A1\\u01B0]/i.test(s)) return "VI";',
+    '    if (/[\\u011F\\u0131\\u015F\\u00E7\\u00F6\\u00FC]/i.test(s)) return "TR";',
+    '    if (/[\\u0151\\u0171]/i.test(s)) return "HU";',
+    '    if (/[\\u011B\\u0161\\u010D\\u0159\\u017E\\u00FD\\u00E1\\u00ED\\u00E9\\u00FA\\u016F]/i.test(s)) return "CS";',
+    '    if (/[\\u0105\\u0107\\u0119\\u0142\\u0144\\u00F3\\u015B\\u017A\\u017C]/i.test(s)) return "PL";',
+    '    if (/[\\u015F\\u0163]/u.test(s)) return "RO";',
+    '    if (/\\p{Script=Latin}/u.test(s)) {',
+    '        if (/[\\u00DF\\u00E4\\u00F6\\u00FC]/i.test(s)) return "DE";',
+    '        if (/[\\u00F1\\u00BF]/i.test(s))               return "ES";',
+    '        if (/[\\u00E7\\u00E0\\u00E2\\u00E9\\u00E8\\u00EA\\u00EB\\u00EE\\u00EF\\u00F4\\u00FB\\u00F9]/i.test(s)) return "FR";',
+    '        if (/[\\u00E5\\u00E4\\u00F6]/i.test(s))        return "SV";',
+    '        return "EN";',
+    '    }',
+    '    return "EN";',
+    '};'
+  ].join("\n");
+
   // LocaleFont expression, inlined so it can be applied to any text layer.
   var AUTO_FONT_EXPR = [
-    'footage("Duolingo_locale_engine.jsx").sourceData;',
-    'var contextItems = ["App", "Marketing", "Marketing-Feather"];',
-    'var contextIdx   = effect("Duo AutoFont")(1);',
-    'var context      = contextItems[contextIdx - 1] || "App";',
+    _DETECT_FN,
+    'var context = "App";',
+    'try {',
+    '    var contextItems = ["App", "Marketing", "Marketing-Feather"];',
+    '    context = contextItems[effect("Duo AutoFont")(1) - 1] || "App";',
+    '} catch(e) {}',
     'var compNames = {',
     '    "App":               ":: LANGUAGE COMP_APP",',
     '    "Marketing":         ":: LANGUAGE COMP_MARKETING",',
@@ -762,10 +797,12 @@ Panels:
   var _build_csv_expr = function (srcLayerName) {
     var q = srcLayerName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     return [
-      'footage("Duolingo_locale_engine.jsx").sourceData;',
-      'var contextItems = ["App", "Marketing", "Marketing-Feather"];',
-      'var contextIdx   = effect("Duo AutoFont")(1);',
-      'var context      = contextItems[contextIdx - 1] || "App";',
+      _DETECT_FN,
+      'var context = "App";',
+      'try {',
+      '    var contextItems = ["App", "Marketing", "Marketing-Feather"];',
+      '    context = contextItems[effect("Duo AutoFont")(1) - 1] || "App";',
+      '} catch(e) {}',
       'var compNames = {',
       '    "App":               ":: LANGUAGE COMP_APP",',
       '    "Marketing":         ":: LANGUAGE COMP_MARKETING",',

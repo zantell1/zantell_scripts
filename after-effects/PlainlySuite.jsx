@@ -740,7 +740,7 @@ Panels:
     '      return /[іїє]/i.test(s) ? "UK" : "RU";',
     '    case /[\\u4E00-\\u9FA5]/u.test(s): return "ZH-CN";',
     '    case /\\p{Script=Han}/u.test(s): return "ZH-TW";',
-    '    case /[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/i.test(s):',
+    '    case /[ảạắằẳẵặấầẩẫậẻẽẹếềểễệỉịỏọốồổỗộớờởỡợủụứừửữựỳỷỹỵơư]/i.test(s):',
     '      return "VI";',
     '    case /[ğışçöü]/i.test(s): return "TR";',
     '    case /[őű]/i.test(s): return "HU";',

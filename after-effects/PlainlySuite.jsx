@@ -5,10 +5,9 @@ Dockable ScriptUI panel suite for After Effects.
 Panels:
 - Arabic Duplicator : duplicate/link layers with Arabic suffix and opacity gating
 - Parameter Creator : create Plainly parameter guide layers from selected properties
-- Auto Font         : apply inline LocaleFont expression to selected text layers
+- Auto Font         : apply Duo AutoFont effect + LocaleFont expression to selected layers
 - Font Weight       : batch-change font weight on selected text layers
 - Renderer Check    : find and fix comps not using Classic 3D renderer
-- Lorem             : non-Latin sample text snippets for quick copy-paste testing
 */
 
 (function PlainlySuite(thisObj) {
@@ -721,50 +720,84 @@ Panels:
   // AUTO FONT — logic + UI
   // ============================================================
 
-  // LocaleFont expression — self-contained, no external JSX or effect needed.
-  // The LANG_COMP variable at the top controls which weight/context comp is used.
-  var AUTO_FONT_EXPR_TEMPLATE = [
-    'const LANG_COMP = "::COMP_PLACEHOLDER::";',
-    'const detect = (txt) => {',
-    '  const s = String(txt);',
-    '  switch (true) {',
-    '    case /\\p{Script=Arabic}/u.test(s): return "AR";',
-    '    case /\\p{Script=Bengali}/u.test(s): return "BN";',
-    '    case /\\p{Script=Greek}/u.test(s): return "EL";',
-    '    case /\\p{Script=Devanagari}/u.test(s): return "HI";',
-    '    case /\\p{Script=Tamil}/u.test(s): return "TA";',
-    '    case /\\p{Script=Telugu}/u.test(s): return "TE";',
-    '    case /\\p{Script=Thai}/u.test(s): return "TH";',
-    '    case /\\p{Script=Hangul}/u.test(s): return "KO";',
-    '    case /[\\p{sc=Hira}\\p{sc=Kana}]/u.test(s): return "JA";',
-    '    case /\\p{Script=Cyrillic}/u.test(s):',
-    '      return /[іїє]/i.test(s) ? "UK" : "RU";',
-    '    case /[\\u4E00-\\u9FA5]/u.test(s): return "ZH-CN";',
-    '    case /\\p{Script=Han}/u.test(s): return "ZH-TW";',
-    '    case /[àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/i.test(s):',
-    '      return "VI";',
-    '    case /[ğışçöü]/i.test(s): return "TR";',
-    '    case /[őű]/i.test(s): return "HU";',
-    '    case /[ěščřžýáíéóúů]/i.test(s): return "CS";',
-    '    case /[ąćęłńóśźż]/i.test(s): return "PL";',
-    '    case /[șț]/u.test(s): return "RO";',
-    '    case /\\p{Script=Latin}/u.test(s):',
-    '      if (/[ßäöü]/i.test(s)) return "DE";',
-    '      if (/[ñ¿]/i.test(s)) return "ES";',
-    '      if (/[çàâéèêëîïôûù]/i.test(s)) return "FR";',
-    '      if (/[åäö]/i.test(s)) return "SV";',
-    '      return "EN";',
-    '    default: return "EN";',
-    '  }',
+  // LocaleFont expression, inlined so it can be applied to any text layer.
+  var AUTO_FONT_EXPR = [
+    'footage("Duolingo_locale_engine.jsx").sourceData;',
+    'var contextItems = ["App", "Marketing", "Marketing-Feather"];',
+    'var contextIdx   = effect("Duo AutoFont")(1);',
+    'var context      = contextItems[contextIdx - 1] || "App";',
+    'var compNames = {',
+    '    "App":               ":: LANGUAGE COMP_APP",',
+    '    "Marketing":         ":: LANGUAGE COMP_MARKETING",',
+    '    "Marketing-Feather": ":: LANGUAGE COMP_FEATHER"',
     '};',
-    'const txt = text.sourceText;',
-    'const locale = detect(txt);',
-    'const targetFont = comp(LANG_COMP).layer(locale).text.sourceText.style.font;',
-    'text.sourceText.style.setFont(targetFont).setText(txt);'
+    'var txt    = text.sourceText;',
+    'var locale = duo_detect_locale(txt);',
+    'var targetLayer = null;',
+    'var _find_layer = function (compName, layerName) {',
+    '    try { return comp(compName).layer(layerName); } catch(e) { return null; }',
+    '};',
+    'targetLayer = _find_layer(compNames[context], locale);',
+    'if (!targetLayer && context === "Marketing-Feather") {',
+    '    targetLayer = _find_layer(compNames["Marketing"], locale);',
+    '}',
+    'if (!targetLayer) {',
+    '    targetLayer = _find_layer(compNames["App"], locale);',
+    '}',
+    'try {',
+    '    var finalFont = targetLayer',
+    '        ? targetLayer.text.sourceText.style.font',
+    '        : text.sourceText.style.font;',
+    '    if (finalFont && finalFont !== text.sourceText.style.font) {',
+    '        text.sourceText.style.setFont(finalFont).setText(txt);',
+    '    } else {',
+    '        text.sourceText.style.setText(txt);',
+    '    }',
+    '} catch(e) {',
+    '    text.sourceText.style.setText(txt);',
+    '}'
   ].join("\n");
 
-  var _build_auto_font_expr = function (compName) {
-    return AUTO_FONT_EXPR_TEMPLATE.replace("::COMP_PLACEHOLDER::", compName);
+  // Build CSV+LocaleFont expression with a specific source layer name baked in.
+  var _build_csv_expr = function (srcLayerName) {
+    var q = srcLayerName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return [
+      'footage("Duolingo_locale_engine.jsx").sourceData;',
+      'var contextItems = ["App", "Marketing", "Marketing-Feather"];',
+      'var contextIdx   = effect("Duo AutoFont")(1);',
+      'var context      = contextItems[contextIdx - 1] || "App";',
+      'var compNames = {',
+      '    "App":               ":: LANGUAGE COMP_APP",',
+      '    "Marketing":         ":: LANGUAGE COMP_MARKETING",',
+      '    "Marketing-Feather": ":: LANGUAGE COMP_FEATHER"',
+      '};',
+      'var _csvDoc   = thisComp.layer("' + q + '").text.sourceText;',
+      'var csvText   = _csvDoc.text || String(_csvDoc);',
+      'var langArray = csvText.split(",");',
+      'var layerNum  = parseInt(thisLayer.name.split(" - ")[1], 10);',
+      'var resultText = (layerNum > 0 && layerNum - 1 < langArray.length)',
+      '    ? langArray[layerNum - 1].trim() : "error";',
+      'var locale = duo_detect_locale(resultText);',
+      'var targetLayer = null;',
+      'var _find_layer = function (compName, layerName) {',
+      '    try { return comp(compName).layer(layerName); } catch(e) { return null; }',
+      '};',
+      'targetLayer = _find_layer(compNames[context], locale);',
+      'if (!targetLayer && context === "Marketing-Feather") {',
+      '    targetLayer = _find_layer(compNames["Marketing"], locale);',
+      '}',
+      'if (!targetLayer) { targetLayer = _find_layer(compNames["App"], locale); }',
+      'try {',
+      '    var finalFont = targetLayer ? targetLayer.text.sourceText.style.font : text.sourceText.style.font;',
+      '    if (finalFont && finalFont !== text.sourceText.style.font) {',
+      '        text.sourceText.style.setFont(finalFont).setText(resultText);',
+      '    } else {',
+      '        text.sourceText.style.setText(resultText);',
+      '    }',
+      '} catch(e) {',
+      '    text.sourceText.style.setText(resultText);',
+      '}'
+    ].join("\n");
   };
 
   var build_auto_font_ui = function (container) {
@@ -773,38 +806,80 @@ Panels:
     container.margins       = 8;
     container.spacing       = 6;
 
-    var info = container.add("statictext", undefined,
-      "Wires an inline LocaleFont expression to the Source Text of each selected text layer. Choose the language comp below.",
-      { multiline: true });
-    info.alignment = ["fill", "top"];
+    // ---- Helper: apply preset + given expr to selected layers ----
+    var _apply_to_selected = function (expr, status) {
+      var activeComp = null;
+      try { activeComp = app.project.activeItem; } catch(e) {}
+      if (!(activeComp instanceof CompItem)) { status.text = "Open a comp first."; return; }
 
-    var COMP_OPTIONS = [
-      ":: LANGUAGE COMP_APP",
-      ":: LANGUAGE COMP_regular",
-      ":: LANGUAGE COMP_medium",
-      ":: LANGUAGE COMP_MARKETING",
-      ":: LANGUAGE COMP_FEATHER"
-    ];
-    var COMP_LABELS = ["App Bold", "App Regular", "App Medium", "Marketing", "Feather"];
+      var layers  = activeComp.selectedLayers;
+      var applied = 0, skipped = 0;
+      var errors  = [];
 
-    var compGroup = container.add("group");
-    compGroup.alignment = ["fill", "top"];
-    compGroup.add("statictext", undefined, "Comp:");
-    var compDrop = compGroup.add("dropdownlist", undefined, COMP_LABELS);
-    compDrop.selection = 0;
+      app.beginUndoGroup("PlainlySuite: Apply Auto Font");
+      try {
+        for (var i = 0; i < layers.length; i++) {
+          var lyr = layers[i];
+          if (!(lyr instanceof TextLayer)) { skipped++; continue; }
+          try {
+            var _has = false;
+            try { _has = !!lyr.property("Effects").property("Duo AutoFont"); } catch(e) {}
+            if (!_has) {
+              var _pf = new File(new File($.fileName).parent.absoluteURI + "/DuoAutoFont.ffx");
+              if (!_pf.exists) { errors.push(lyr.name + ": DuoAutoFont.ffx not found"); continue; }
+              lyr.applyPreset(_pf);
+            }
+            var srcText = lyr.property("Source Text");
+            srcText.expression        = expr;
+            srcText.expressionEnabled = true;
+            applied++;
+          } catch(e) { errors.push(lyr.name + ": " + e.message); }
+        }
+      } catch(e) {}
+      app.endUndoGroup();
 
-    var applyBtn = container.add("button", undefined, "Apply to Selected Layers");
-    var status   = container.add("statictext", undefined, "Select text layers then click Apply.");
-    status.alignment = ["fill", "bottom"];
+      var msg = "Applied to " + applied + " layer" + (applied !== 1 ? "s" : "") + ".";
+      if (skipped > 0) { msg += " " + skipped + " non-text skipped."; }
+      if (errors.length > 0) { msg += " Errors: " + errors.join("; "); }
+      status.text = msg;
+    };
+
+    // ---- Section 1: LocaleFont (plain text layers) ----
+    container.add("statictext", undefined, "— Plain text layers —");
+    var applyBtn = container.add("button", undefined, "Apply Auto Font to Selected");
+    var status1  = container.add("statictext", undefined, "Select text layers then click Apply.");
+    status1.alignment = ["fill", "top"];
+
+    applyBtn.onClick = function () { _apply_to_selected(AUTO_FONT_EXPR, status1); };
+
+    // ---- Divider ----
+    container.add("panel", undefined, undefined).alignment = ["fill", "top"];
+
+    // ---- Section 2: CSV Splitter ----
+    container.add("statictext", undefined, "— CSV layers (Language - N) —");
+
+    var srcRow = container.add("group");
+    srcRow.orientation   = "row";
+    srcRow.alignChildren = ["left", "center"];
+    srcRow.spacing       = 4;
+    srcRow.add("statictext", undefined, "Source layer:");
+    var srcInput = srcRow.add("edittext", undefined, "EDIT_CourseOrder_bold");
+    srcInput.preferredSize = [160, -1];
+
+    var csvBtn  = container.add("button", undefined, "Apply CSV Splitter to Selected");
+    var status2 = container.add("statictext", undefined, "Select Language - N layers then click.");
+    status2.alignment = ["fill", "bottom"];
+
+    csvBtn.onClick = function () {
+      var name = srcInput.text;
+      if (!name || !name.length) { status2.text = "Enter source layer name."; return; }
+      _apply_to_selected(_build_csv_expr(name), status2);
+    };
 
     applyBtn.onClick = function () {
       var activeComp = null;
       try { activeComp = app.project.activeItem; } catch(e) {}
       if (!(activeComp instanceof CompItem)) { status.text = "Open a comp first."; return; }
-
-      var selIdx   = compDrop.selection ? compDrop.selection.index : 0;
-      var compName = COMP_OPTIONS[selIdx];
-      var expr     = _build_auto_font_expr(compName);
 
       var layers   = activeComp.selectedLayers;
       var applied  = 0;
@@ -818,9 +893,23 @@ Panels:
           if (!(lyr instanceof TextLayer)) { skipped++; continue; }
 
           try {
+            // ---- Apply Duo AutoFont preset (.ffx next to this script) ----
+            var _alreadyHas = false;
+            try { _alreadyHas = !!lyr.property("Effects").property("Duo AutoFont"); } catch(e) {}
+            if (!_alreadyHas) {
+              var _presetFile = new File(new File($.fileName).parent.absoluteURI + "/DuoAutoFont.ffx");
+              if (!_presetFile.exists) {
+                errors.push(lyr.name + ": DuoAutoFont.ffx not found at " + _presetFile.fsName);
+                continue;
+              }
+              lyr.applyPreset(_presetFile);
+            }
+
+            // ---- Apply expression to Source Text ----
             var srcText = lyr.property("Source Text");
-            srcText.expression        = expr;
+            srcText.expression        = AUTO_FONT_EXPR;
             srcText.expressionEnabled = true;
+
             applied++;
           } catch(e) {
             errors.push(lyr.name + ": " + e.message);
@@ -1040,74 +1129,67 @@ Panels:
   };
 
   // ============================================================
-  // LOREM — non-Latin sample text snippets
+  // SELECT BY FONT
   // ============================================================
-
-  var LOREM_SAMPLES = [
-    { label: "AR — Arabic",       text: "مرحبًا بالعالم، هذا نص تجريبي لاختبار الخطوط العربية" },
-    { label: "BN — Bengali",      text: "হ্যালো বিশ্ব, এটি বাংলা ফন্ট পরীক্ষার জন্য একটি নমুনা পাঠ্য" },
-    { label: "EL — Greek",        text: "Γεια σου κόσμε, αυτό είναι ένα δοκιμαστικό κείμενο" },
-    { label: "HI — Hindi",        text: "नमस्ते दुनिया, यह फ़ॉन्ट परीक्षण के लिए एक नमूना पाठ है" },
-    { label: "TA — Tamil",        text: "வணக்கம் உலகம், இது எழுத்துரு சோதனைக்கான மாதிரி உரை" },
-    { label: "TE — Telugu",       text: "హలో ప్రపంచం, ఇది ఫాంట్ పరీక్ష కోసం నమూనా వచనం" },
-    { label: "TH — Thai",         text: "สวัสดีชาวโลก นี่คือข้อความตัวอย่างสำหรับทดสอบฟอนต์" },
-    { label: "KO — Korean",       text: "안녕하세요 세계, 이것은 글꼴 테스트를 위한 샘플 텍스트입니다" },
-    { label: "JA — Japanese",     text: "こんにちは世界、これはフォントテスト用のサンプルテキストです" },
-    { label: "ZH-CN — Chinese S", text: "你好世界，这是用于字体测试的示例文本" },
-    { label: "ZH-TW — Chinese T", text: "你好世界，這是用於字體測試的範例文字" },
-    { label: "UK — Ukrainian",    text: "Привіт світе, це зразок тексту для тестування шрифтів" },
-    { label: "RU — Russian",      text: "Привет мир, это образец текста для тестирования шрифтов" },
-    { label: "VI — Vietnamese",   text: "Xin chào thế giới, đây là văn bản mẫu để kiểm tra phông chữ" },
-    { label: "CSV — All locales",
-      text: "Hello, مرحبًا, হ্যালো, Γεια, नमस्ते, வணக்கம், హలో, สวัสดี, 안녕, こんにちは, 你好, 你好, Привіт, Привет, Xin chào, Merhaba, Sziasztok, Ahoj, Cześć, Salut, Hallo, Bonjour, Hola, Hej, Hallo, Kumusta, Halo, Ciao" }
-  ];
-
-  var build_lorem_ui = function (container) {
+  var build_select_by_font_ui = function (container) {
     container.orientation   = "column";
     container.alignChildren = ["fill", "top"];
     container.margins       = 8;
-    container.spacing       = 4;
+    container.spacing       = 6;
 
-    var info = container.add("statictext", undefined,
-      "Click any row to copy its text to the clipboard.",
-      { multiline: false });
-    info.alignment = ["fill", "top"];
+    var status = container.add("statictext", undefined, "Select a text layer, then click.");
+    status.alignment = ["fill", "top"];
 
-    var list = container.add("listbox", undefined, [],
-      { numberOfColumns: 2, showHeaders: true,
-        columnTitles: ["Locale", "Sample Text"],
-        columnWidths: [110, 320] });
-    list.alignment     = ["fill", "fill"];
-    list.preferredSize = [-1, 340];
+    var fontLabel = container.add("statictext", undefined, "Font: —");
+    fontLabel.alignment = ["fill", "top"];
 
-    for (var i = 0; i < LOREM_SAMPLES.length; i++) {
-      var row = list.add("item", LOREM_SAMPLES[i].label);
-      row.subItems[0].text = LOREM_SAMPLES[i].text;
-    }
+    var row = container.add("group");
+    row.orientation = "row";
+    row.alignChildren = ["fill", "center"];
+    row.spacing = 4;
 
-    var status = container.add("statictext", undefined, "");
-    status.alignment = ["fill", "bottom"];
+    var readBtn   = row.add("button", undefined, "Read Selected Font");
+    var selectBtn = row.add("button", undefined, "Select Matching Layers");
+    selectBtn.enabled = false;
 
-    list.onDoubleClick = function () {
-      if (!list.selection) { return; }
-      var idx = list.selection.index;
-      var txt = LOREM_SAMPLES[idx].text;
-      // Copy to system clipboard via a temporary script command
-      var _cmd;
-      if ($.os.indexOf("Mac") !== -1) {
-        var _f = new File(Folder.temp.absoluteURI + "/plainly_clip.txt");
-        _f.open("w"); _f.encoding = "UTF-8"; _f.write(txt); _f.close();
-        _cmd = 'cat "' + _f.fsName + '" | pbcopy';
-        system.callSystem(_cmd);
-        _f.remove();
-      } else {
-        var _f = new File(Folder.temp.absoluteURI + "/plainly_clip.txt");
-        _f.open("w"); _f.encoding = "UTF-8"; _f.write(txt); _f.close();
-        _cmd = 'cmd /c "type \\"' + _f.fsName + '\\" | clip"';
-        system.callSystem(_cmd);
-        _f.remove();
+    var _currentFont = "";
+
+    readBtn.onClick = function () {
+      var comp = null;
+      try { comp = app.project.activeItem; } catch(e) {}
+      if (!(comp instanceof CompItem)) { status.text = "Open a comp first."; return; }
+
+      var sel = comp.selectedLayers;
+      for (var i = 0; i < sel.length; i++) {
+        if (sel[i] instanceof TextLayer) {
+          try {
+            _currentFont = sel[i].property("Source Text").value.font;
+            fontLabel.text = "Font: " + _currentFont;
+            selectBtn.enabled = true;
+            status.text = "Ready. Click 'Select Matching Layers'.";
+            return;
+          } catch(e) {}
+        }
       }
-      status.text = "Copied: " + LOREM_SAMPLES[idx].label;
+      status.text = "No text layer selected.";
+    };
+
+    selectBtn.onClick = function () {
+      var comp = null;
+      try { comp = app.project.activeItem; } catch(e) {}
+      if (!(comp instanceof CompItem) || !_currentFont) { return; }
+
+      var count = 0;
+      for (var i = 1; i <= comp.numLayers; i++) {
+        var lyr = comp.layer(i);
+        if (!(lyr instanceof TextLayer)) { lyr.selected = false; continue; }
+        try {
+          var font = lyr.property("Source Text").value.font;
+          lyr.selected = (font === _currentFont);
+          if (lyr.selected) count++;
+        } catch(e) { lyr.selected = false; }
+      }
+      status.text = "Selected " + count + " layer" + (count === 1 ? "" : "s") + " using " + _currentFont + ".";
     };
   };
 
@@ -1137,7 +1219,7 @@ Panels:
     "Auto Font",
     "Font Weight",
     "Renderer Check",
-    "Lorem"
+    "Select by Font"
   ];
   var nav = mainRow.add("listbox", undefined, NAV_LABELS);
   nav.alignment          = ["left", "fill"];
@@ -1165,16 +1247,16 @@ Panels:
   var pAutoFont = _makePanelGroup();
   var pWeight   = _makePanelGroup();
   var pRenderer = _makePanelGroup();
-  var pLorem    = _makePanelGroup();
+  var pSelFont  = _makePanelGroup();
 
-  var allPanels = [pArabic, pParam, pAutoFont, pWeight, pRenderer, pLorem];
+  var allPanels = [pArabic, pParam, pAutoFont, pWeight, pRenderer, pSelFont];
 
   build_arabic_ui(pArabic);
   build_param_creator_ui(pParam);
   build_auto_font_ui(pAutoFont);
   build_font_weight_ui(pWeight);
   build_renderer_check_ui(pRenderer);
-  build_lorem_ui(pLorem);
+  build_select_by_font_ui(pSelFont);
 
   // Show first panel, hide the rest
   for (var _pi = 1; _pi < allPanels.length; _pi++) {
